@@ -1,0 +1,18 @@
+# 文件夹
+__pycache__
+.idea
+/dataset
+
+# 视频
+*.mp4
+*.avi
+
+# 模型
+*.pt
+*.pth
+
+# 图片
+*.png
+
+# 保存文件
+*.pkl
