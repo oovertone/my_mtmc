@@ -1,7 +1,9 @@
 # 文件夹
 /__pycache__/
 /.idea/
+/data/
 /dataset/
+/pytorch/
 
 # 视频
 *.mp4
@@ -10,9 +12,6 @@
 # 模型
 *.pt
 *.pth
-
-# 图片
-*.png
 
 # 保存文件
 *.pkl
