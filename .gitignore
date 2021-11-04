@@ -1,7 +1,7 @@
 # 文件夹
-__pycache__
-.idea
-/dataset
+/__pycache__/
+/.idea/
+/dataset/
 
 # 视频
 *.mp4
