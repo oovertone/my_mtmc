@@ -36,29 +36,9 @@ def get_aic_configs(prj_path):
     aic_configs = configs.aic_configs
 
     # 拼接路径
-    aic_configs['SCENE_DIR'] = os.path.join(prj_path, aic_configs['SCENE_DIR'])
+    aic_configs['global_configs']['SCENE_DIR'] = os.path.join(prj_path, aic_configs['global_configs']['SCENE_DIR'])
 
     return aic_configs
-
-
-def get_det_df(det_path):
-    """
-    读取 detection 结果
-    """
-
-    det_df = pd.read_csv(det_path, header=None)
-    det_df.columns = ['frame', '-1', 'left', 'top', 'width', 'height', 'conf', '-1', '-1', '-1']
-    return det_df
-
-
-def get_tracking_df(tracking_path):
-    """
-    获取 tracking 结果
-    """
-
-    tracking_df = pd.read_csv(tracking_path, header=None)
-    tracking_df.columns = ['frame', 'ID', 'left', 'top', 'width', 'height', '1', '-1', '-1', '-1']
-    return tracking_df
 
 
 def get_calibration_parms(calibration_path):

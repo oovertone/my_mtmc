@@ -25,13 +25,15 @@ import utils
 from config import cfg
 from reid.reid import ReidFeature
 
-CPU_WORKER_NUM = 8  # 处理器核数
-DOWN_SAMPLING_RATE = 0.4  # 下采样率
-TRAIN_VALI_TEST_RATE = [0.8, 0.1, 0.1]  # 训练集比例
-SAVE_DIR = './dataset'  # 保存路径
-GPU_ID = 0  # 保存路径
-BATCH_SIZE = 64  # 批次大小
-VELOCITY_THR = 60 / 3.6  # 速度阈值，m/s
+# 读取配置文件
+aic_configs = utils.get_aic_configs(Path(__file__).parents[2])
+
+CPU_WORKER_NUM = aic_configs['global_configs']['CPU_WORKER_NUM']  # 处理器核数
+DOWN_SAMPLING_RATE = aic_configs['prepare_dataset_configs']['DOWN_SAMPLING_RATE']  # 下采样率
+TRAIN_VALI_TEST_RATE = aic_configs['prepare_dataset_configs']['TRAIN_VALI_TEST_RATE']  # 训练集比例
+SAVE_DIR = aic_configs['prepare_dataset_configs']['SAVE_DIR']  # 保存路径
+GPU_ID = aic_configs['global_configs']['GPU_ID']  # 保存路径
+BATCH_SIZE = aic_configs['prepare_dataset_configs']['BATCH_SIZE']  # 批次大小
 
 
 def get_cam_parms_dict(cam_dir):
@@ -607,9 +609,6 @@ def main():
     """
     主程序
     """
-
-    # 读取配置文件
-    aic_configs = utils.get_aic_configs(Path(__file__).parents[2])
 
     # 创建目录
     dir_list = [

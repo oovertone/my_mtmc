@@ -6,5 +6,19 @@
 """
 
 aic_configs = {
-    'SCENE_DIR': './datasets/AIC21_Track3_MTMC_Tracking/test/S06/'
+    'global_configs': {
+        'SCENE_DIR': './dataset/AIC21_Track3_MTMC_Tracking/test/S06/',  # 场景目录
+        'CPU_WORKER_NUM': 8,  # 处理器核数
+        'GPU_ID': 0,  # GPU ID
+    },
+    'show_save_video_configs': {
+        'CAM_NUM_MAX': 6,  # 最大显示视频数
+        'NUM_COLS': 3  # 子窗口列数
+    },
+    'prepare_dataset_configs': {
+        'DOWN_SAMPLING_RATE': 0.4,  # 下采样率
+        'TRAIN_VALI_TEST_RATE': [0.8, 0.1, 0.1],  # 训练集比例
+        'SAVE_DIR': './dataset',  # 保存目录
+        'BATCH_SIZE': 64  # 批次大小
+    }
 }
