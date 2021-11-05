@@ -25,13 +25,16 @@ import utils
 from config import cfg
 from reid.reid import ReidFeature
 
-CPU_WORKER_NUM = 8  # 处理器核数
-DOWN_SAMPLING_RATE = 0.4  # 下采样率
-TRAIN_VALI_TEST_RATE = [0.8, 0.1, 0.1]  # 训练集比例
-SAVE_DIR = './dataset'  # 保存路径
-GPU_ID = 0  # 保存路径
-BATCH_SIZE = 64  # 批次大小
-VELOCITY_THR = 60 / 3.6  # 速度阈值，m/s
+# 读取配置文件
+aic_configs = utils.get_aic_configs(Path(__file__).parents[1])
+
+SCENE_DIR = aic_configs['global_configs']['SCENE_DIR']  # 场景目录
+GPU_ID = aic_configs['global_configs']['GPU_ID']  # GPU ID
+CPU_WORKER_NUM = aic_configs['global_configs']['CPU_WORKER_NUM']  # 处理器核数
+DOWN_SAMPLING_RATE = aic_configs['prepare_dataset_configs']['DOWN_SAMPLING_RATE']  # 下采样率
+TRAIN_VALI_TEST_RATE = aic_configs['prepare_dataset_configs']['TRAIN_VALI_TEST_RATE']  # 训练集比例
+SAVE_DIR = aic_configs['prepare_dataset_configs']['SAVE_DIR']  # 保存路径
+BATCH_SIZE = aic_configs['prepare_dataset_configs']['BATCH_SIZE']  # 批次大小
 
 
 def get_cam_parms_dict(cam_dir):
@@ -99,12 +102,12 @@ def get_lane_color_df(lane_color_path):
     return lane_color_df
 
 
-def get_mtmc_df(aic_configs):
+def get_mtmc_df():
     """
     获取 mtmc_df 结果
     """
 
-    mtmc_df = pd.read_csv(os.path.join(aic_configs['SCENE_DIR'], 'track3.txt'), sep=' ', header=None)
+    mtmc_df = pd.read_csv(os.path.join(SCENE_DIR, 'track3.txt'), sep=' ', header=None)
     mtmc_df.columns = ['cam_id', 'car_id', 'frame_id', 'left', 'top', 'width', 'height', '-1', '-1']
     mtmc_df['cam_id'] = mtmc_df.cam_id.apply(lambda x: 'c0' + str(x))
     mtmc_df.frame_id = mtmc_df.frame_id - 1
@@ -602,14 +605,16 @@ def cal_save_dataset(ds_df, batch_size, span_dict):
     for k in num_all_same_diff_dict.keys():
         print(f'{k}: {num_all_same_diff_dict[k]}')
 
+    # TODO
+    # 保存 num_all_same_diff_dict
+    # 同一/不同相机下  正负样本数据分类保存
+    # 根据 num_all_same_diff_dict 统计结果组合训练集并保存
+
 
 def main():
     """
     主程序
     """
-
-    # 读取配置文件
-    aic_configs = utils.get_aic_configs(Path(__file__).parents[2])
 
     # 创建目录
     dir_list = [
@@ -621,22 +626,21 @@ def main():
     utils.create_dir(dir_list)
 
     # 读取场景内全部相机参数
-    scene_dir = aic_configs['SCENE_DIR']
-    cam_id_list = list(filter(lambda x: x.startswith('c0'), os.listdir(scene_dir)))
+    cam_id_list = list(filter(lambda x: x.startswith('c0'), os.listdir(SCENE_DIR)))
     cam_id_list = ['c041', 'c042']
     cam_parms_df = pd.DataFrame.from_records(
-        list(map(lambda x: get_cam_parms_dict(os.path.join(scene_dir, x)), cam_id_list))
+        list(map(lambda x: get_cam_parms_dict(os.path.join(SCENE_DIR, x)), cam_id_list))
     )
 
     # 读取车道颜色表
     lane_color_df = get_lane_color_df('./lane/lane_color.txt')
 
     # 读取结果
-    mtmc_df = get_mtmc_df(aic_configs)
+    mtmc_df = get_mtmc_df()
 
     # 获取场景内全部相机数据集
     if not os.path.isfile('./dataset/img_df_list.pkl'):
-        cam_dir_list = list(map(lambda x: os.path.join(scene_dir, x), cam_id_list))
+        cam_dir_list = list(map(lambda x: os.path.join(SCENE_DIR, x), cam_id_list))
         args_list = [(cam_dir, lane_color_df, mtmc_df, cam_parms_df) for cam_dir in cam_dir_list]
 
         # 开启多进程
@@ -694,11 +698,6 @@ def main():
 
     # 两两计算数据集
     cal_save_dataset(ds_df, 1024, span_dict)
-
-    # # 导入数据
-    # with open('./dataset/feat_label/train/dataset_train_list_0.pkl', 'rb') as f:
-    #     dataset = pickle.load(f)
-    # dataset_df = pd.DataFrame(dataset)
 
     print('Done!')
 
