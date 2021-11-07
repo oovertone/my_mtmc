@@ -5,6 +5,9 @@
 /dataset/
 /pytorch/
 
+# 图片
+*.jpg
+
 # 视频
 *.mp4
 *.avi
