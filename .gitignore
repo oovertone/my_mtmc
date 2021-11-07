@@ -3,6 +3,7 @@
 /.idea/
 /data/
 /dataset/
+/my_model/dataset
 /pytorch/
 
 # 视频
