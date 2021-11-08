@@ -688,6 +688,9 @@ def main():
         c.start()
     p.join()
 
+    # TODO
+    # 合并成训练集、验证集、测试集
+
     print('Done!')
 
 
