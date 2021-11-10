@@ -6,7 +6,8 @@
 """
 
 import os
-import pickle
+import joblib
+import random
 import sys
 import time
 from multiprocessing import Pool
@@ -39,7 +40,49 @@ SAVE_DIR = aic_configs['prepare_dataset_configs']['SAVE_DIR']  # 保存路径
 BATCH_SIZE = aic_configs['prepare_dataset_configs']['BATCH_SIZE']  # 批次大小
 
 
-class SDL_Dataset(object):
+class Save_Dataset(object):
+    """
+    保存 Dataset 类
+    """
+
+    def __init__(self, save_dir):
+        """
+        初始化
+        """
+
+        self.dataset_list = []  # 数据列表
+        self.file_num = -1  # 当前保存文件数
+        self.save_dir = save_dir
+        self.save_path = ""
+
+    def update_save_path(self):
+        """
+        更新保存路径
+        """
+        pass
+
+    def queue_up(self, q, batch_size):
+        """
+        如果数据长度大于 batch_size，放入队列
+        """
+
+        while len(self.dataset_list) >= batch_size:
+            # 更新
+            self.file_num += 1
+            self.update_save_path()
+
+            data = self.dataset_list.copy()  # 复制一份数据
+
+            save_dict = {
+                'data': data[0:batch_size],
+                'save_path': self.save_path
+            }
+            self.dataset_list = data[batch_size:]
+            q.put(save_dict)
+        return q
+
+
+class SDL_Dataset(Save_Dataset):
     """
     SDL_Dataset 类
     SDL: same diff label
@@ -50,33 +93,40 @@ class SDL_Dataset(object):
         初始化
         """
 
+        super().__init__(save_dir)
         self.same_diff = same_diff  # 是否为同一相机
         self.label = label  # label 为 true or false
-        self.dataset_list = []  # 存放特征数据
-        self.file_num = 0  # 当前保存文件数
-        self.save_dir = save_dir
+
+    def update_save_path(self):
+        """
+        更新保存路径
+        """
         self.save_path = os.path.join(
-            self.save_dir, self.same_diff, str(self.label), f'{self.same_diff}_{self.label}_{self.file_num}.pkl'
-        )  # 保存路径
+            self.save_dir, self.same_diff, str(self.label), f'{self.same_diff}_{self.label}_{self.file_num}.npy'
+        )
 
-    def queue_up(self, q, batch_size):
+
+class TVT_Dataset(Save_Dataset):
+    """
+    TVT_Dataset 类
+    TVT: train vali test
+    """
+
+    def __init__(self, train_vali_test, save_dir):
         """
-        排队
+        初始化
         """
 
-        if len(self.dataset_list) >= batch_size:
-            save_dict = {
-                'data': self.dataset_list.copy(),
-                'save_path': self.save_path
-            }
-            self.dataset_list.clear()
-            q.put(save_dict)
-            # 更新
-            self.file_num += 1
-            self.save_path = os.path.join(
-                self.save_dir, self.same_diff, str(self.label), f'{self.same_diff}_{self.label}_{self.file_num}.pkl'
-            )
-        return q
+        super().__init__(save_dir)
+        self.train_vali_test = train_vali_test  # 是否为同一相机
+
+    def update_save_path(self):
+        """
+        更新保存路径
+        """
+        self.save_path = os.path.join(
+            self.save_dir, self.train_vali_test, f'{self.train_vali_test}_{self.file_num}.npy'
+        )
 
 
 def get_cam_parms_dict(cam_dir):
@@ -439,7 +489,38 @@ def cal_reid_feat(ds_df, cfg_path_list, cam_parms_df):
     return out_df
 
 
-def produce_sam_diff_dataset(ds_df, save_dir, span_dict, q):
+def split_data(data, rate):
+    """
+    分割数据集
+    """
+    idx = list(range(len(data)))
+    random.shuffle(idx)
+    len_sel = int(len(data) * rate)
+    data_1 = data[0:len_sel]
+    data_2 = data[len_sel:]
+
+    return data_1, data_2
+
+
+def consume_dataset(q):
+    """
+    消费：从队列中取出数据并保存
+    """
+
+    while True:
+        save_dict = q.get()
+
+        # 保存数据
+        save_dir = Path(save_dict['save_path']).parents[0]
+        if not os.path.isdir(save_dir):
+            os.makedirs(save_dir)
+        # joblib.dump(save_dict['data'], open(save_dict['save_path'], 'wb'))
+        np.save(save_dict['save_path'], save_dict['data'])
+        print(f"save {save_dict['save_path']} done!")
+        q.task_done()
+
+
+def produce_dataset(ds_df, save_dir, span_dict, q):
     """
     生产：两两计算数据集并保存
     区分同一摄像头和不同摄像头
@@ -476,7 +557,14 @@ def produce_sam_diff_dataset(ds_df, save_dir, span_dict, q):
             'd_1': SDL_Dataset('diff', 1, save_dir)
         }
 
-        return count_dict, sdl_dataset_dict
+        # 初始化 TVT 对象
+        tvt_dataset_dict = {
+            'train': TVT_Dataset('train', save_dir),
+            'vali': TVT_Dataset('vali', save_dir),
+            'test': TVT_Dataset('test', save_dir)
+        }
+
+        return count_dict, sdl_dataset_dict, tvt_dataset_dict
 
     def cal_feat_label_list():
         """
@@ -496,20 +584,27 @@ def produce_sam_diff_dataset(ds_df, save_dir, span_dict, q):
             ) - sp_dict['reid_feat']['reid_feat_min']) / sp_dict['reid_feat']['span_reid_feat']
         )
 
-        # 特征拼接
+        # 特征拼接 + label
         feat_label_list = [
                               np.abs(ds_df.x_wrd[i] - ds_sel_df.x_wrd[j]) / sp_dict['span_x'],
                               np.abs(ds_df.y_wrd[i] - ds_sel_df.y_wrd[j]) / sp_dict['span_y'],
                               (ds_df.timestamp[i] - ds_sel_df.timestamp[j]) / sp_dict['span_t'],
                               sp_dict['od_matrix'][ds_df.lane_id[i], ds_sel_df.lane_id[j]]
-                          ] + reid_feat_list
-
-        feat_label_list = preprocessing.normalize(np.array(feat_label_list).reshape(1, -1)).flatten().tolist()  # l2 归一化
-        feat_label_list.append(int(ds_df.car_id[i] == ds_sel_df.car_id[j]))  # 添加标签
+                          ] + reid_feat_list + \
+                          [
+                              int(ds_df.cam_id[i] == ds_sel_df.cam_id[j]),  # 是否为同一相机
+                              int(ds_df.car_id[i] == ds_sel_df.car_id[j])  # 是否为同一辆车
+                          ]
 
         return feat_label_list
 
-    count_dict, sdl_dataset_dict = init_dict()  # 初始化
+    count_dict, sdl_dataset_dict, tvt_dataset_dict = init_dict()  # 初始化
+
+    # 随机打乱 ds_df
+    idx = list(ds_df.index)
+    random.shuffle(idx)
+    ds_df.index = idx
+    ds_df.sort_index(inplace=True)
 
     for i in tqdm(range(len(ds_df))):
         ds_sel_df = ds_df.loc[ds_df.timestamp < ds_df.timestamp[i], :].reset_index(drop=True)
@@ -518,6 +613,10 @@ def produce_sam_diff_dataset(ds_df, save_dir, span_dict, q):
 
         # 各种筛选
         def various_filter(x):
+            """
+            各自筛选
+            """
+
             bool_list = []
             ts_f_dict = span_dict[x.cam_id + ds_df.cam_id[i]]
 
@@ -531,7 +630,7 @@ def produce_sam_diff_dataset(ds_df, save_dir, span_dict, q):
             bool_list.append(v < ts_f_dict['v_thr'])
 
             # od 筛选
-            bool_list.append(utils.false_2_true(bool(ts_f_dict['od_matrix'][x.lane_id, ds_df.lane_id[i]]), 0.1))
+            bool_list.append(utils.false_2_true(bool(ts_f_dict['od_matrix'][x.lane_id, ds_df.lane_id[i]]), 0.01))
 
             return np.array(bool_list).all()
 
@@ -547,55 +646,55 @@ def produce_sam_diff_dataset(ds_df, save_dir, span_dict, q):
             if ds_sel_df.cam_id[j] == ds_df.cam_id[i]:  # 同一个相机
                 if ds_sel_df.car_id[j] == ds_df.car_id[i]:  # true
                     count_dict['num_same_dict']['num_1'] += 1
-                    sdl_dataset_dict['s_1'].dataset_list.append(feat_label_list)
+                    # sdl_dataset_dict['s_1'].dataset_list.append(feat_label_list)
                 else:  # false
                     count_dict['num_same_dict']['num_0'] += 1
-                    sdl_dataset_dict['s_0'].dataset_list.append(feat_label_list)
+                    # sdl_dataset_dict['s_0'].dataset_list.append(feat_label_list)
                 count_dict['num_same_dict']['num'] = count_dict['num_same_dict']['num_0'] + \
                                                      count_dict['num_same_dict']['num_1']
             else:  # 不同相机
                 if ds_sel_df.car_id[j] == ds_df.car_id[i]:  # true
                     count_dict['num_diff_dict']['num_1'] += 1
-                    sdl_dataset_dict['d_1'].dataset_list.append(feat_label_list)
+                    # sdl_dataset_dict['d_1'].dataset_list.append(feat_label_list)
                 else:  # false
                     count_dict['num_diff_dict']['num_0'] += 1
-                    sdl_dataset_dict['d_0'].dataset_list.append(feat_label_list)
+                    # sdl_dataset_dict['d_0'].dataset_list.append(feat_label_list)
                 count_dict['num_diff_dict']['num'] = count_dict['num_diff_dict']['num_0'] + \
                                                      count_dict['num_diff_dict']['num_1']
             count_dict['num_0'] = count_dict['num_same_dict']['num_0'] + count_dict['num_diff_dict']['num_0']
             count_dict['num_1'] = count_dict['num_same_dict']['num_1'] + count_dict['num_diff_dict']['num_1']
             count_dict['num'] = count_dict['num_0'] + count_dict['num_1']
-
             # 依次向保存队列中生产数据
             for key in sdl_dataset_dict:
                 q = sdl_dataset_dict[key].queue_up(q, BATCH_SIZE[1])
+
+            # 按概率分到 train，vali，test
+            rand_num = random.random()
+            if 0 <= rand_num < TRAIN_VALI_TEST_RATE[0]:
+                tvt_dataset_dict['train'].dataset_list.append(feat_label_list)
+            elif TRAIN_VALI_TEST_RATE[0] <= rand_num < sum(TRAIN_VALI_TEST_RATE[0:2]):
+                tvt_dataset_dict['vali'].dataset_list.append(feat_label_list)
+            else:
+                tvt_dataset_dict['test'].dataset_list.append(feat_label_list)
+            # 依次向保存队列中生产数据
+            for key in tvt_dataset_dict:
+                q = tvt_dataset_dict[key].queue_up(q, BATCH_SIZE[1])
+
     # 把剩余数据放入保存队列
     for key in sdl_dataset_dict:
         if len(sdl_dataset_dict[key].dataset_list):
             q = sdl_dataset_dict[key].queue_up(q, 1)
+
+    for key in tvt_dataset_dict:
+        if len(tvt_dataset_dict[key].dataset_list):
+            q = tvt_dataset_dict[key].queue_up(q, 1)
+
     q.put({
         'data': count_dict,
         'save_path': os.path.join(save_dir, 'count_dict.pkl')
     })
     q.join()
     print(f'count_dict: {count_dict}')
-
-
-def consume_sam_diff_dataset(q):
-    """
-    消费：从队列中取出数据并保存
-    """
-
-    while True:
-        save_dict = q.get()
-
-        # 保存数据
-        save_dir = Path(save_dict['save_path']).parents[0]
-        if not os.path.isdir(save_dir):
-            os.makedirs(save_dir)
-        pickle.dump(save_dict['data'], open(save_dict['save_path'], 'wb'))
-        print(f"save {save_dict['save_path']} done!")
-        q.task_done()
 
 
 def main():
@@ -631,13 +730,13 @@ def main():
         cam_parms_df['std'] = [output_list[0][1][1], output_list[1][1][1]]
 
         # 保存数据
-        pickle.dump(img_df_list, open(os.path.join(SAVE_DIR, 'img_df_list.pkl'), 'wb'))
-        pickle.dump(cam_parms_df, open(os.path.join(SAVE_DIR, 'cam_parms_df.pkl'), 'wb'))
+        joblib.dump(img_df_list, open(os.path.join(SAVE_DIR, 'img_df_list.pkl'), 'wb'))
+        joblib.dump(cam_parms_df, open(os.path.join(SAVE_DIR, 'cam_parms_df.pkl'), 'wb'))
     else:
         with open(os.path.join(SAVE_DIR, 'img_df_list.pkl'), 'rb') as f:
-            img_df_list = pickle.load(f)
+            img_df_list = joblib.load(f)
         with open(os.path.join(SAVE_DIR, 'cam_parms_df.pkl'), 'rb') as f:
-            cam_parms_df = pickle.load(f)
+            cam_parms_df = joblib.load(f)
 
     # 拼接数据集
     img_df = pd.DataFrame()
@@ -660,36 +759,41 @@ def main():
         ]
         ds_df = cal_reid_feat(ds_df, cfg_path_list, cam_parms_df)
         # 保存数据
-        pickle.dump(ds_df, open(os.path.join(SAVE_DIR, 'ds_df.pkl'), 'wb'))
+        joblib.dump(ds_df, open(os.path.join(SAVE_DIR, 'ds_df.pkl'), 'wb'))
     else:
         with open(os.path.join(SAVE_DIR, 'ds_df.pkl'), 'rb') as f:
-            ds_df = pickle.load(f)
+            ds_df = joblib.load(f)
 
     # 计算特征跨度
     if not os.path.isfile(os.path.join(SAVE_DIR, 'span_dict.pkl')):
         span_dict = cal_span_dict(ds_df, lane_color_df)
         # 保存数据
-        pickle.dump(span_dict, open(os.path.join(SAVE_DIR, 'span_dict.pkl'), 'wb'))
+        joblib.dump(span_dict, open(os.path.join(SAVE_DIR, 'span_dict.pkl'), 'wb'))
     else:
         with open(os.path.join(SAVE_DIR, 'span_dict.pkl'), 'rb') as f:
-            span_dict = pickle.load(f)
+            span_dict = joblib.load(f)
 
-    # 两两计算数据集并放入保存队列
+    # 开启队列并启动消费者
     q = JoinableQueue()  # 创建队列
-    p = Process(target=produce_sam_diff_dataset, args=(ds_df, os.path.join(SAVE_DIR, 'feat_label'), span_dict, q,))  # 生产者
     c_list = []  # 多消费者
-    for i in range(3):
-        c = Process(target=consume_sam_diff_dataset, args=(q,))
-        c.daemon = True
+    for i in range(CPU_WORKER_NUM-1):
+        c = Process(target=consume_dataset, args=(q,))
+        c.daemon = True  # 设置为守护进程
         c_list.append(c)
-    # 启动进程
-    p.start()
     for c in c_list:
         c.start()
-    p.join()
 
-    # TODO
-    # 合并成训练集、验证集、测试集
+    # 两两计算数据集并放入保存队列
+    if not os.path.isfile(os.path.join(SAVE_DIR, 'feat_label', 'count_dict.pkl')):
+        p = Process(target=produce_dataset,
+                    args=(ds_df, os.path.join(SAVE_DIR, 'feat_label'), span_dict, q,))  # 生产者
+        # 启动进程
+        p.start()
+        p.join()
+    else:
+        with open(os.path.join(SAVE_DIR, 'feat_label', 'count_dict.pkl'), 'rb') as f:
+            count_dict = joblib.load(f)
+            print(f'count_dict: {count_dict}')
 
     print('Done!')
 
