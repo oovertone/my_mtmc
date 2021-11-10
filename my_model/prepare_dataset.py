@@ -6,20 +6,17 @@
 """
 
 import os
-import joblib
 import random
 import sys
-import time
 from multiprocessing import Pool
-from pathlib import Path
 from multiprocessing import Process, JoinableQueue
+from pathlib import Path
 
 import cv2
+import joblib
 import numpy as np
 import pandas as pd
 from geopy.distance import geodesic
-from sklearn import preprocessing
-from sklearn.model_selection import StratifiedShuffleSplit
 from sklearn.model_selection import train_test_split
 from tqdm import tqdm
 
@@ -61,24 +58,27 @@ class Save_Dataset(object):
         """
         pass
 
-    def queue_up(self, q, batch_size):
+    def queue_up(self, q, batch_size, last=False):
         """
         如果数据长度大于 batch_size，放入队列
         """
 
-        while len(self.dataset_list) >= batch_size:
-            # 更新
-            self.file_num += 1
-            self.update_save_path()
+        while (len(self.dataset_list) >= batch_size) or last:
+            if len(self.dataset_list):
+                # 更新
+                self.file_num += 1
+                self.update_save_path()
 
-            data = self.dataset_list.copy()  # 复制一份数据
+                data = self.dataset_list.copy()  # 复制一份数据
 
-            save_dict = {
-                'data': data[0:batch_size],
-                'save_path': self.save_path
-            }
-            self.dataset_list = data[batch_size:]
-            q.put(save_dict)
+                save_dict = {
+                    'data': data[0:batch_size],
+                    'save_path': self.save_path
+                }
+                self.dataset_list = data[batch_size:]
+                q.put(save_dict)
+            else:
+                break
         return q
 
 
@@ -514,9 +514,8 @@ def consume_dataset(q):
         save_dir = Path(save_dict['save_path']).parents[0]
         if not os.path.isdir(save_dir):
             os.makedirs(save_dir)
-        # joblib.dump(save_dict['data'], open(save_dict['save_path'], 'wb'))
         np.save(save_dict['save_path'], save_dict['data'])
-        print(f"save {save_dict['save_path']} done!")
+        print(f"已保存： {save_dict['save_path']} ! 队列长度：{q.qsize()}")
         q.task_done()
 
 
@@ -598,7 +597,39 @@ def produce_dataset(ds_df, save_dir, span_dict, q):
 
         return feat_label_list
 
+    def split_car_id_tvt():
+        """
+        根据车辆 id 分割训练集、验证集与测试集（剩余）
+        """
+        car_id_list = list(np.unique(ds_df.car_id))
+        random.shuffle(car_id_list)
+        car_id_list_train = car_id_list[0:int(len(car_id_list) * TRAIN_VALI_TEST_RATE[0])]
+        car_id_list_vali = list(
+            filter(lambda x: x not in car_id_list_train, car_id_list)
+        )[0:int(len(car_id_list) * TRAIN_VALI_TEST_RATE[1])]
+        car_id_list_test = list(
+            filter(lambda x: (x not in car_id_list_train) and (x not in car_id_list_vali), car_id_list)
+        )
+
+        return car_id_list_train, car_id_list_vali, car_id_list_test
+
+    def get_tvt(car_id_1, car_id_2):
+        """
+        区分训练集、验证集与测试集
+        """
+        if (car_id_1 in car_id_list_train) and (car_id_2 in car_id_list_train):
+            return 'train'
+        elif (car_id_1 in car_id_list_vali) and (car_id_2 in car_id_list_vali):
+            return 'vali'
+        elif (car_id_1 in car_id_list_test) and (car_id_2 in car_id_list_test):
+            return 'test'
+        else:
+            return None
+
     count_dict, sdl_dataset_dict, tvt_dataset_dict = init_dict()  # 初始化
+
+    # 确定训练集、验证集、测试集车辆 id
+    car_id_list_train, car_id_list_vali, car_id_list_test = split_car_id_tvt()
 
     # 随机打乱 ds_df
     idx = list(ds_df.index)
@@ -640,6 +671,10 @@ def produce_dataset(ds_df, save_dir, span_dict, q):
             continue
 
         for j in range(len(ds_sel_df)):
+            tvt = get_tvt(ds_df.car_id[i], ds_sel_df.car_id[j])
+            if not tvt:
+                continue
+
             feat_label_list = cal_feat_label_list()  # 计算特征
 
             # 分配
@@ -669,10 +704,9 @@ def produce_dataset(ds_df, save_dir, span_dict, q):
                 q = sdl_dataset_dict[key].queue_up(q, BATCH_SIZE[1])
 
             # 按概率分到 train，vali，test
-            rand_num = random.random()
-            if 0 <= rand_num < TRAIN_VALI_TEST_RATE[0]:
+            if tvt == 'train':
                 tvt_dataset_dict['train'].dataset_list.append(feat_label_list)
-            elif TRAIN_VALI_TEST_RATE[0] <= rand_num < sum(TRAIN_VALI_TEST_RATE[0:2]):
+            elif tvt == 'vali':
                 tvt_dataset_dict['vali'].dataset_list.append(feat_label_list)
             else:
                 tvt_dataset_dict['test'].dataset_list.append(feat_label_list)
@@ -683,11 +717,11 @@ def produce_dataset(ds_df, save_dir, span_dict, q):
     # 把剩余数据放入保存队列
     for key in sdl_dataset_dict:
         if len(sdl_dataset_dict[key].dataset_list):
-            q = sdl_dataset_dict[key].queue_up(q, 1)
+            q = sdl_dataset_dict[key].queue_up(q, BATCH_SIZE[1], last=True)
 
     for key in tvt_dataset_dict:
         if len(tvt_dataset_dict[key].dataset_list):
-            q = tvt_dataset_dict[key].queue_up(q, 1)
+            q = tvt_dataset_dict[key].queue_up(q, BATCH_SIZE[1], last=True)
 
     q.put({
         'data': count_dict,
@@ -776,7 +810,7 @@ def main():
     # 开启队列并启动消费者
     q = JoinableQueue()  # 创建队列
     c_list = []  # 多消费者
-    for i in range(CPU_WORKER_NUM-1):
+    for i in range(1):
         c = Process(target=consume_dataset, args=(q,))
         c.daemon = True  # 设置为守护进程
         c_list.append(c)
