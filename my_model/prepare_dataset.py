@@ -725,7 +725,7 @@ def produce_dataset(ds_df, save_dir, span_dict, q):
 
     q.put({
         'data': count_dict,
-        'save_path': os.path.join(save_dir, 'count_dict.pkl')
+        'save_path': os.path.join(save_dir, 'count_dict.npy')
     })
     q.join()
     print(f'count_dict: {count_dict}')
@@ -819,8 +819,7 @@ def main():
 
     # 两两计算数据集并放入保存队列
     if not os.path.isfile(os.path.join(SAVE_DIR, 'feat_label', 'count_dict.pkl')):
-        p = Process(target=produce_dataset,
-                    args=(ds_df, os.path.join(SAVE_DIR, 'feat_label'), span_dict, q,))  # 生产者
+        p = Process(target=produce_dataset, args=(ds_df, os.path.join(SAVE_DIR, 'feat_label'), span_dict, q,))  # 生产者
         # 启动进程
         p.start()
         p.join()

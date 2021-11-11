@@ -8,6 +8,7 @@
 import argparse
 import os
 import random
+import sys
 
 import numpy as np
 import torch
@@ -16,6 +17,10 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import Dataset
+from tqdm import tqdm
+
+sys.path.append('../')
+import utils
 
 
 class My_Dataset(Dataset):
@@ -23,27 +28,34 @@ class My_Dataset(Dataset):
     数据集类
     """
 
-    def __init__(self, data_path_list, train_test):
+    def __init__(self, data_path_list, train_test, rate=1.0):
         """
         初始化
         """
         # 遍历组合数据
         self.data = []
-        for data_path in data_path_list:
+        for data_path in tqdm(data_path_list):
             data = np.load(data_path).tolist()
+            random.shuffle(data)
+            data = data[0:int(len(data)*rate)]
             self.data += data
         self.data = np.array(self.data)
 
         if train_test == 'train':
             data_1 = list(self.data[self.data[:, -1] == 1, :])
             data_0 = list(self.data[self.data[:, -1] == 0, :])
-            random.shuffle(data_0)
-            data_0 = data_0[0:len(data_1)]
-            self.data = data_0 + data_1
+
+            # 平衡正负样本
+            if len(data_1) >= len(data_0):
+                data_m, data_l = data_1, data_0
+            else:
+                data_m, data_l = data_0, data_1
+
+            random.shuffle(data_m)
+            data_m = data_m[0:len(data_l)]
+            self.data = data_l + data_m
             random.shuffle(self.data)
             self.data = np.array(self.data)
-
-        print(f'sum: {sum(self.data[:, -1])}')
 
     def __getitem__(self, index):
         """
@@ -103,9 +115,7 @@ def parse_args():
     parser.add_argument('--lr', type=float, default=1e-4, metavar='LR', help='学习率（默认： 1e-4）')
     parser.add_argument('--gamma', type=float, default=0.7, metavar='M', help='学习率阶跃（默认： 0.7）')
     parser.add_argument('--no_cuda', action='store_true', default=False, help=' 关闭 CUDA')
-    parser.add_argument('--dry_run', action='store_true', default=False, help='快速检查单通')
     parser.add_argument('--seed', type=int, default=1, metavar='S', help='随机种子（默认： 1）')
-    parser.add_argument('--log_interval', type=int, default=1, metavar='N', help='打印训练状态批次间隔（默认： 1）')
     parser.add_argument('--save_model', action='store_true', default=False, help='保存当前模型')
     args = parser.parse_args()
 
@@ -123,53 +133,47 @@ def my_mse_loss(x, y, device):
     return torch.mean(torch.pow((x - y) * k, 2))
 
 
-def train(args, model, device, train_loader, optimizer, epoch):
+def train(model, device, train_loader, optimizer):
     """
-    训练数据
+    训练
     """
 
     model.train()
-    correct = 0
+    correct_num = 0
+    loss_mean = 0
     for batch_idx, (data, target) in enumerate(train_loader):
         data, target = data.to(device), target.to(device)
         optimizer.zero_grad()
         output = model(data)
         loss = F.nll_loss(output, target.flatten())
         loss.backward()
+        loss_mean += loss.item()
         optimizer.step()
-        if batch_idx % args.log_interval == 0:
-            pred = output.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
-            correct += pred.eq(target.view_as(pred)).sum().item()
-            print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}  Accuracy: {}/{} ({:.0f}%)'.format(
-                epoch, (batch_idx + 1) * len(data), len(train_loader.dataset),
-                100. * (batch_idx + 1) / len(train_loader), loss.item(), correct,
-                len(train_loader.dataset), 100. * correct / len(train_loader.dataset)
-            ))
-            if args.dry_run:
-                break
+        pred = output.argmax(dim=1, keepdim=True)
+        correct_num += pred.eq(target.view_as(pred)).sum().item()
+    loss_mean = np.round(loss_mean / len(train_loader), 4)
+    accuracy = int(100 * correct_num / len(train_loader.dataset))
+    print(f'训练集：平均loss：{loss_mean}，准确率：{accuracy}% [{correct_num}/{len(train_loader.dataset)}]', end=' / ')
 
 
 def test(model, device, test_loader):
     """
-    测试数据
+    测试
     """
 
     model.eval()
-    test_loss = 0
-    correct = 0
+    loss_mean = 0
+    correct_num = 0
     with torch.no_grad():
         for data, target in test_loader:
             data, target = data.to(device), target.to(device)
             output = model(data)
-            test_loss += F.nll_loss(output, target.flatten(), reduction='sum').item()  # sum up batch loss
-            pred = output.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
-            correct += pred.eq(target.view_as(pred)).sum().item()
-
-    test_loss /= len(test_loader.dataset)
-
-    print('Test set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
-        test_loss, correct, len(test_loader.dataset),
-        100. * correct / len(test_loader.dataset)))
+            loss_mean += F.nll_loss(output, target.flatten()).item()
+            pred = output.argmax(dim=1, keepdim=True)
+            correct_num += pred.eq(target.view_as(pred)).sum().item()
+    loss_mean = np.round(loss_mean / len(test_loader), 4)
+    accuracy = int(100 * correct_num / len(test_loader.dataset))
+    print(f'测试集：平均loss：{loss_mean}，准确率：{accuracy}% [{correct_num}/{len(test_loader.dataset)}]')
 
 
 def main():
@@ -195,40 +199,52 @@ def main():
 
     # 使用 cuda
     if use_cuda:
-        cuda_kwargs = {'num_workers': 1,
-                       'pin_memory': True,
-                       'shuffle': True}
+        cuda_kwargs = {
+            'num_workers': 8,
+            'pin_memory': True,
+            'shuffle': True
+        }
         train_kwargs.update(cuda_kwargs)
         test_kwargs.update(cuda_kwargs)
 
     # 导入数据集
     # 测试集
     test_dir = './dataset/feat_label/test/'
-    test_path_list = os.listdir(test_dir)
-    test_path_list = [os.path.join(test_dir, i) for i in test_path_list]
-    dataset_test = My_Dataset(test_path_list, 'test')
+    test_path_list = list(map(lambda x: os.path.join(test_dir, x), os.listdir(test_dir)))
+    dataset_test = My_Dataset(test_path_list, 'test', 0.1)
     test_loader = torch.utils.data.DataLoader(dataset_test, **test_kwargs)
+    del dataset_test
+
     # 训练集
     train_dir = './dataset/feat_label/train/'
-    train_path_list = os.listdir(train_dir)
+    train_path_list = list(map(lambda x: os.path.join(train_dir, x), os.listdir(train_dir)))
+    train_path_list_2 = utils.chunks(train_path_list, 30)
 
     model = Net().to(device)  # 实例化 model
 
-    optimizer = optim.SGD(model.parameters(), lr=args.lr)  # 优化器
+    # 优化器与调度器
+    optimizer = optim.SGD(model.parameters(), lr=args.lr)
     scheduler = StepLR(optimizer, step_size=1, gamma=args.gamma)
 
     # 训练
-    for epoch in range(1, args.epochs + 1):
-        for train_path in train_path_list:
-            dataset_train = My_Dataset([os.path.join(train_dir, train_path)], 'train')
+    epoch_mini = 10
+    epoch_num = int(args.epochs / epoch_mini)
+    for i in range(epoch_num):
+        print(f'\n[{i+1}/{epoch_num}]')
+        for j, train_path_list in enumerate(train_path_list_2):
+            # 导入训练集
+            print(f'\n[{j+1}/{len(train_path_list_2)}]')
+            dataset_train = My_Dataset(train_path_list, 'train')
             train_loader = torch.utils.data.DataLoader(dataset_train, **train_kwargs)
-            train(args, model, device, train_loader, optimizer, epoch)
-            test(model, device, test_loader)
+            del dataset_train
+            for k in range(epoch_mini):
+                train(model, device, train_loader, optimizer)
+                test(model, device, test_loader)
         scheduler.step()
 
     # 保存模型
     if args.save_model:
-        torch.save(model.state_dict(), "mnist_cnn.pt")
+        torch.save(model.state_dict(), "mtmc.pt")
 
 
 if __name__ == '__main__':
