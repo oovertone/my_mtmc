@@ -61,7 +61,8 @@ class My_Dataset(Dataset):
         """
         获取单个数据
         """
-        feat = torch.from_numpy(self.data[index][0:-2]).float()
+        # feat = torch.from_numpy(self.data[index][0:-2]).float()  # x,y,t,od,img 特征
+        feat = torch.from_numpy(self.data[index][4:-2]).float()  # img 特征
         label = torch.from_numpy(self.data[index][-1:]).long()
 
         return feat, label
@@ -87,7 +88,8 @@ class Net(nn.Module):
         super(Net, self).__init__()
         self.dropout1 = nn.Dropout(0.25)
         self.dropout2 = nn.Dropout(0.5)
-        self.fc1 = nn.Linear(12292, 1024)
+        # self.fc1 = nn.Linear(12292, 1024)  # x,y,t,od,img 特征
+        self.fc1 = nn.Linear(12288, 1024)  # img 特征
         self.fc2 = nn.Linear(1024, 16)
         self.fc3 = nn.Linear(16, 2)
 

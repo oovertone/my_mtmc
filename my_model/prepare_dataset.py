@@ -81,31 +81,6 @@ class Save_Dataset(object):
                 break
         return q
 
-
-class SDL_Dataset(Save_Dataset):
-    """
-    SDL_Dataset 类
-    SDL: same diff label
-    """
-
-    def __init__(self, same_diff, label, save_dir):
-        """
-        初始化
-        """
-
-        super().__init__(save_dir)
-        self.same_diff = same_diff  # 是否为同一相机
-        self.label = label  # label 为 true or false
-
-    def update_save_path(self):
-        """
-        更新保存路径
-        """
-        self.save_path = os.path.join(
-            self.save_dir, self.same_diff, str(self.label), f'{self.same_diff}_{self.label}_{self.file_num}.npy'
-        )
-
-
 class TVT_Dataset(Save_Dataset):
     """
     TVT_Dataset 类
@@ -548,14 +523,6 @@ def produce_dataset(ds_df, save_dir, span_dict, q):
             }
         }
 
-        # 初始化 SDL 对象
-        sdl_dataset_dict = {
-            's_0': SDL_Dataset('same', 0, save_dir),
-            's_1': SDL_Dataset('same', 1, save_dir),
-            'd_0': SDL_Dataset('diff', 0, save_dir),
-            'd_1': SDL_Dataset('diff', 1, save_dir)
-        }
-
         # 初始化 TVT 对象
         tvt_dataset_dict = {
             'train': TVT_Dataset('train', save_dir),
@@ -645,7 +612,7 @@ def produce_dataset(ds_df, save_dir, span_dict, q):
         # 各种筛选
         def various_filter(x):
             """
-            各自筛选
+            各种筛选
             """
 
             bool_list = []
@@ -681,19 +648,15 @@ def produce_dataset(ds_df, save_dir, span_dict, q):
             if ds_sel_df.cam_id[j] == ds_df.cam_id[i]:  # 同一个相机
                 if ds_sel_df.car_id[j] == ds_df.car_id[i]:  # true
                     count_dict['num_same_dict']['num_1'] += 1
-                    # sdl_dataset_dict['s_1'].dataset_list.append(feat_label_list)
                 else:  # false
                     count_dict['num_same_dict']['num_0'] += 1
-                    # sdl_dataset_dict['s_0'].dataset_list.append(feat_label_list)
                 count_dict['num_same_dict']['num'] = count_dict['num_same_dict']['num_0'] + \
                                                      count_dict['num_same_dict']['num_1']
             else:  # 不同相机
                 if ds_sel_df.car_id[j] == ds_df.car_id[i]:  # true
                     count_dict['num_diff_dict']['num_1'] += 1
-                    # sdl_dataset_dict['d_1'].dataset_list.append(feat_label_list)
                 else:  # false
                     count_dict['num_diff_dict']['num_0'] += 1
-                    # sdl_dataset_dict['d_0'].dataset_list.append(feat_label_list)
                 count_dict['num_diff_dict']['num'] = count_dict['num_diff_dict']['num_0'] + \
                                                      count_dict['num_diff_dict']['num_1']
             count_dict['num_0'] = count_dict['num_same_dict']['num_0'] + count_dict['num_diff_dict']['num_0']
@@ -738,7 +701,7 @@ def main():
 
     # 读取场景内全部相机参数
     cam_id_list = list(filter(lambda x: x.startswith('c0'), os.listdir(SCENE_DIR)))
-    cam_id_list = ['c041', 'c042']
+    cam_id_list = ['c041', 'c042', 'c043']
     cam_parms_df = pd.DataFrame.from_records(
         list(map(lambda x: get_cam_parms_dict(os.path.join(SCENE_DIR, x)), cam_id_list))
     )
@@ -760,8 +723,8 @@ def main():
         img_df_list = [output_list[0][0], output_list[1][0]]
 
         # 修改cam_parms_df 参数
-        cam_parms_df['mean'] = [output_list[0][1][0], output_list[1][1][0]]
-        cam_parms_df['std'] = [output_list[0][1][1], output_list[1][1][1]]
+        cam_parms_df['mean'] = [output_list[i][1][0] for i in range(len(output_list))]
+        cam_parms_df['std'] = [output_list[i][1][1] for i in range(len(output_list))]
 
         # 保存数据
         joblib.dump(img_df_list, open(os.path.join(SAVE_DIR, 'img_df_list.pkl'), 'wb'))

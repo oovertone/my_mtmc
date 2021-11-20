@@ -16,7 +16,7 @@ aic_configs = {
         'NUM_COLS': 3  # 子窗口列数
     },
     'prepare_dataset_configs': {
-        'DOWN_SAMPLING_RATE': 0.4,  # 下采样率
+        'DOWN_SAMPLING_RATE': 0.1,  # 下采样率
         'TRAIN_VALI_TEST_RATE': [0.5, 0.25, 0.25],  # 训练集比例
         'SAVE_DIR': './dataset',  # 保存目录
         'BATCH_SIZE': [64, 1024]  # 批次大小
