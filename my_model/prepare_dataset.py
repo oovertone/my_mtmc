@@ -712,7 +712,7 @@ def main():
         # 开启多进程
         with Pool(CPU_WORKER_NUM) as p:
             output_list = p.map(get_img_df, args_list)
-        img_df_list = [output_list[0][0], output_list[1][0]]
+        img_df_list = [output_list[i][0] for i in len(output_list)]
 
         # 修改cam_parms_df 参数
         cam_parms_df['mean'] = [output_list[i][1][0] for i in range(len(output_list))]
