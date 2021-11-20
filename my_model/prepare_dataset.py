@@ -530,7 +530,7 @@ def produce_dataset(ds_df, save_dir, span_dict, q):
             'test': TVT_Dataset('test', save_dir)
         }
 
-        return count_dict, sdl_dataset_dict, tvt_dataset_dict
+        return count_dict, tvt_dataset_dict
 
     def cal_feat_label_list():
         """
@@ -593,7 +593,7 @@ def produce_dataset(ds_df, save_dir, span_dict, q):
         else:
             return None
 
-    count_dict, sdl_dataset_dict, tvt_dataset_dict = init_dict()  # 初始化
+    count_dict, tvt_dataset_dict = init_dict()  # 初始化
 
     # 确定训练集、验证集、测试集车辆 id
     car_id_list_train, car_id_list_vali, car_id_list_test = split_car_id_tvt()
@@ -662,9 +662,6 @@ def produce_dataset(ds_df, save_dir, span_dict, q):
             count_dict['num_0'] = count_dict['num_same_dict']['num_0'] + count_dict['num_diff_dict']['num_0']
             count_dict['num_1'] = count_dict['num_same_dict']['num_1'] + count_dict['num_diff_dict']['num_1']
             count_dict['num'] = count_dict['num_0'] + count_dict['num_1']
-            # 依次向保存队列中生产数据
-            for key in sdl_dataset_dict:
-                q = sdl_dataset_dict[key].queue_up(q, BATCH_SIZE[1])
 
             # 按概率分到 train，vali，test
             if tvt == 'train':
@@ -676,11 +673,6 @@ def produce_dataset(ds_df, save_dir, span_dict, q):
             # 依次向保存队列中生产数据
             for key in tvt_dataset_dict:
                 q = tvt_dataset_dict[key].queue_up(q, BATCH_SIZE[1])
-
-    # 把剩余数据放入保存队列
-    for key in sdl_dataset_dict:
-        if len(sdl_dataset_dict[key].dataset_list):
-            q = sdl_dataset_dict[key].queue_up(q, BATCH_SIZE[1], last=True)
 
     for key in tvt_dataset_dict:
         if len(tvt_dataset_dict[key].dataset_list):
