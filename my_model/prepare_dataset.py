@@ -785,6 +785,9 @@ def main():
 
     print('Done!')
 
+    # TODO
+    # 分文件名存储：场景相机号、下采样率
+
 
 if __name__ == '__main__':
     main()
