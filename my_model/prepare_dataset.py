@@ -27,10 +27,10 @@ from reid.reid import ReidFeature
 
 # 读取配置文件
 aic_configs = utils.get_aic_configs(Path(__file__).parents[1])
-
 SCENE_DIR = aic_configs['global_configs']['SCENE_DIR']  # 场景目录
 GPU_ID = aic_configs['global_configs']['GPU_ID']  # GPU ID
 CPU_WORKER_NUM = aic_configs['global_configs']['CPU_WORKER_NUM']  # 处理器核数
+CAM_ID_LIST = aic_configs['prepare_dataset_configs']['CAM_ID_LIST']  # 数据集中包含的相机列表
 DOWN_SAMPLING_RATE = aic_configs['prepare_dataset_configs']['DOWN_SAMPLING_RATE']  # 下采样率
 TRAIN_VALI_TEST_RATE = aic_configs['prepare_dataset_configs']['TRAIN_VALI_TEST_RATE']  # 训练集比例
 SAVE_DIR = aic_configs['prepare_dataset_configs']['SAVE_DIR']  # 保存路径
@@ -80,6 +80,7 @@ class Save_Dataset(object):
             else:
                 break
         return q
+
 
 class TVT_Dataset(Save_Dataset):
     """
@@ -693,7 +694,7 @@ def main():
 
     # 读取场景内全部相机参数
     cam_id_list = list(filter(lambda x: x.startswith('c0'), os.listdir(SCENE_DIR)))
-    cam_id_list = ['c041', 'c042', 'c043']
+    cam_id_list = ['c041', 'c042', 'c043']  # 临时  等所有相机交叉口车道划分图完成后删除
     cam_parms_df = pd.DataFrame.from_records(
         list(map(lambda x: get_cam_parms_dict(os.path.join(SCENE_DIR, x)), cam_id_list))
     )
@@ -705,42 +706,45 @@ def main():
     mtmc_df = get_mtmc_df()
 
     # 获取场景内全部相机数据集
-    if not os.path.isfile(os.path.join(SAVE_DIR, 'img_df_list.pkl')):
+    if not os.path.isfile(os.path.join(SAVE_DIR, 'img_df.pkl')):
         cam_dir_list = list(map(lambda x: os.path.join(SCENE_DIR, x), cam_id_list))
         args_list = [(cam_dir, lane_color_df, mtmc_df, cam_parms_df) for cam_dir in cam_dir_list]
 
         # 开启多进程
         with Pool(CPU_WORKER_NUM) as p:
             output_list = p.map(get_img_df, args_list)
+
+        # 取出 img_df
         img_df_list = [output_list[i][0] for i in range(len(output_list))]
+        img_df = pd.DataFrame()
+        for i_df in img_df_list:
+            img_df = img_df.append(i_df)
+        img_df = img_df.reset_index(drop=True)
+        img_df = utils.multi_cam_filter(img_df, 2)  # 筛选经过至少2个摄像头的数据
 
         # 修改cam_parms_df 参数
         cam_parms_df['mean'] = [output_list[i][1][0] for i in range(len(output_list))]
         cam_parms_df['std'] = [output_list[i][1][1] for i in range(len(output_list))]
 
         # 保存数据
-        joblib.dump(img_df_list, open(os.path.join(SAVE_DIR, 'img_df_list.pkl'), 'wb'))
+        joblib.dump(img_df, open(os.path.join(SAVE_DIR, 'img_df.pkl'), 'wb'))
         joblib.dump(cam_parms_df, open(os.path.join(SAVE_DIR, 'cam_parms_df.pkl'), 'wb'))
     else:
-        with open(os.path.join(SAVE_DIR, 'img_df_list.pkl'), 'rb') as f:
-            img_df_list = joblib.load(f)
+        with open(os.path.join(SAVE_DIR, 'img_df.pkl'), 'rb') as f:
+            img_df = joblib.load(f)
         with open(os.path.join(SAVE_DIR, 'cam_parms_df.pkl'), 'rb') as f:
             cam_parms_df = joblib.load(f)
 
-    # 拼接数据集
-    img_df = pd.DataFrame()
-    for i_df in img_df_list:
-        img_df = img_df.append(i_df)
-    img_df = img_df.reset_index(drop=True)
-
-    # 筛选经过至少2个摄像头的数据
-    img_df = utils.multi_cam_filter(img_df, 2)
+    img_df = img_df.loc[img_df.cam_id.apply(lambda x: x in CAM_ID_LIST), :].reset_index(
+        drop=True)  # 筛选在 CAM_ID_LIST 内的 img_df
+    dataset_dir = os.path.join(SAVE_DIR, '_'.join(CAM_ID_LIST) + '_' + str(DOWN_SAMPLING_RATE))  # 保存数据集的目录
+    utils.create_dir([dataset_dir])  # 创建目录
 
     # 帧下采样
     ds_df = down_sampling(img_df)
 
     # 提取 reid 特征
-    if not os.path.isfile(os.path.join(SAVE_DIR, 'ds_df.pkl')):
+    if not os.path.isfile(os.path.join(dataset_dir, 'ds_df.pkl')):
         cfg_path_list = [
             '../config/aic_reid1.yml',
             '../config/aic_reid2.yml',
@@ -748,18 +752,18 @@ def main():
         ]
         ds_df = cal_reid_feat(ds_df, cfg_path_list, cam_parms_df)
         # 保存数据
-        joblib.dump(ds_df, open(os.path.join(SAVE_DIR, 'ds_df.pkl'), 'wb'))
+        joblib.dump(ds_df, open(os.path.join(dataset_dir, 'ds_df.pkl'), 'wb'))
     else:
-        with open(os.path.join(SAVE_DIR, 'ds_df.pkl'), 'rb') as f:
+        with open(os.path.join(dataset_dir, 'ds_df.pkl'), 'rb') as f:
             ds_df = joblib.load(f)
 
     # 计算特征跨度
-    if not os.path.isfile(os.path.join(SAVE_DIR, 'span_dict.pkl')):
+    if not os.path.isfile(os.path.join(dataset_dir, 'span_dict.pkl')):
         span_dict = cal_span_dict(ds_df, lane_color_df)
         # 保存数据
-        joblib.dump(span_dict, open(os.path.join(SAVE_DIR, 'span_dict.pkl'), 'wb'))
+        joblib.dump(span_dict, open(os.path.join(dataset_dir, 'span_dict.pkl'), 'wb'))
     else:
-        with open(os.path.join(SAVE_DIR, 'span_dict.pkl'), 'rb') as f:
+        with open(os.path.join(dataset_dir, 'span_dict.pkl'), 'rb') as f:
             span_dict = joblib.load(f)
 
     # 开启队列并启动消费者
@@ -773,20 +777,17 @@ def main():
         c.start()
 
     # 两两计算数据集并放入保存队列
-    if not os.path.isfile(os.path.join(SAVE_DIR, 'feat_label', 'count_dict.pkl')):
-        p = Process(target=produce_dataset, args=(ds_df, os.path.join(SAVE_DIR, 'feat_label'), span_dict, q,))  # 生产者
+    if not os.path.isfile(os.path.join(dataset_dir, 'feat_label', 'count_dict.pkl')):
+        p = Process(target=produce_dataset, args=(ds_df, os.path.join(dataset_dir, 'feat_label'), span_dict, q,))  # 生产者
         # 启动进程
         p.start()
         p.join()
     else:
-        with open(os.path.join(SAVE_DIR, 'feat_label', 'count_dict.pkl'), 'rb') as f:
+        with open(os.path.join(dataset_dir, 'feat_label', 'count_dict.pkl'), 'rb') as f:
             count_dict = joblib.load(f)
             print(f'count_dict: {count_dict}')
 
     print('Done!')
-
-    # TODO
-    # 分文件名存储：场景相机号、下采样率
 
 
 if __name__ == '__main__':
