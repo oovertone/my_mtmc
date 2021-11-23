@@ -35,6 +35,7 @@ RANDOM_SEED = aic_configs['train_configs']['RANDOM_SEED']  # 随机种子
 SAVE_MODEL = aic_configs['train_configs']['SAVE_MODEL']  # 保存模型
 TRAIN_DIR = aic_configs['train_configs']['TRAIN_DIR']  # 训练集目录
 TEST_DIR = aic_configs['train_configs']['TEST_DIR']  # 测试集目录
+TEST_SAMPLE_RATE = aic_configs['train_configs']['TEST_SAMPLE_RATE']  # 测试集下采样率
 
 
 class My_Dataset(Dataset):
@@ -204,7 +205,7 @@ def main():
     # 导入数据集
     # 测试集
     test_path_list = list(map(lambda x: os.path.join(TEST_DIR, x), os.listdir(TEST_DIR)))
-    dataset_test = My_Dataset(test_path_list, 'test', 0.1)
+    dataset_test = My_Dataset(test_path_list, 'test', TEST_SAMPLE_RATE)
     test_loader = torch.utils.data.DataLoader(dataset_test, **test_kwargs)
     del dataset_test
 

@@ -309,6 +309,28 @@ def get_img_df(args):
     return [img_df, mean_std]
 
 
+def split_car_id_tvt(img_df):
+    """
+    根据车辆 id 分割训练集、验证集与测试集（剩余）
+    """
+    car_id_list = list(np.unique(img_df.car_id))
+    random.shuffle(car_id_list)
+    car_id_list_train = car_id_list[0:int(len(car_id_list) * TRAIN_VALI_TEST_RATE[0])]
+    car_id_list_vali = list(
+        filter(lambda x: x not in car_id_list_train, car_id_list)
+    )[0:int(len(car_id_list) * TRAIN_VALI_TEST_RATE[1])]
+    car_id_list_test = list(
+        filter(lambda x: (x not in car_id_list_train) and (x not in car_id_list_vali), car_id_list)
+    )
+    car_id_list_tvt_dict = {
+        'car_id_list_train': car_id_list_train,
+        'car_id_list_vali': car_id_list_vali,
+        'car_id_list_test': car_id_list_test
+    }
+
+    return car_id_list_tvt_dict
+
+
 def cal_od_matrix(lane_color_df, df):
     """
     计算 od 矩阵
@@ -495,7 +517,7 @@ def consume_dataset(q):
         q.task_done()
 
 
-def produce_dataset(ds_df, save_dir, span_dict, q):
+def produce_dataset(ds_df, car_id_list_tvt_dict, save_dir, span_dict, q):
     """
     生产：两两计算数据集并保存
     区分同一摄像头和不同摄像头
@@ -565,39 +587,16 @@ def produce_dataset(ds_df, save_dir, span_dict, q):
 
         return feat_label_list
 
-    def split_car_id_tvt():
-        """
-        根据车辆 id 分割训练集、验证集与测试集（剩余）
-        """
-        car_id_list = list(np.unique(ds_df.car_id))
-        random.shuffle(car_id_list)
-        car_id_list_train = car_id_list[0:int(len(car_id_list) * TRAIN_VALI_TEST_RATE[0])]
-        car_id_list_vali = list(
-            filter(lambda x: x not in car_id_list_train, car_id_list)
-        )[0:int(len(car_id_list) * TRAIN_VALI_TEST_RATE[1])]
-        car_id_list_test = list(
-            filter(lambda x: (x not in car_id_list_train) and (x not in car_id_list_vali), car_id_list)
-        )
-
-        return car_id_list_train, car_id_list_vali, car_id_list_test
-
     def get_tvt(car_id_1, car_id_2):
         """
         区分训练集、验证集与测试集
         """
-        if (car_id_1 in car_id_list_train) and (car_id_2 in car_id_list_train):
-            return 'train'
-        elif (car_id_1 in car_id_list_vali) and (car_id_2 in car_id_list_vali):
-            return 'vali'
-        elif (car_id_1 in car_id_list_test) and (car_id_2 in car_id_list_test):
-            return 'test'
-        else:
-            return None
+        for tvt in car_id_list_tvt_dict:
+            if (car_id_1 in car_id_list_tvt_dict[tvt]) and (car_id_2 in car_id_list_tvt_dict[tvt]):
+                return tvt.split('_')[-1]
+        return None
 
     count_dict, tvt_dataset_dict = init_dict()  # 初始化
-
-    # 确定训练集、验证集、测试集车辆 id
-    car_id_list_train, car_id_list_vali, car_id_list_test = split_car_id_tvt()
 
     # 随机打乱 ds_df
     idx = list(ds_df.index)
@@ -735,8 +734,19 @@ def main():
         with open(os.path.join(SAVE_DIR, 'cam_parms_df.pkl'), 'rb') as f:
             cam_parms_df = joblib.load(f)
 
-    img_df = img_df.loc[img_df.cam_id.apply(lambda x: x in CAM_ID_LIST), :].reset_index(
-        drop=True)  # 筛选在 CAM_ID_LIST 内的 img_df
+    # 确定训练集、验证集、测试集车辆 id
+    if not os.path.isfile(os.path.join(SAVE_DIR, 'car_id_list_tvt_dict.pkl')):
+        car_id_list_tvt_dict = split_car_id_tvt(img_df)
+
+        # 保存数据
+        joblib.dump(car_id_list_tvt_dict, open(os.path.join(SAVE_DIR, 'car_id_list_tvt_dict.pkl'), 'wb'))
+    else:
+        with open(os.path.join(SAVE_DIR, 'car_id_list_tvt_dict.pkl'), 'rb') as f:
+            car_id_list_tvt_dict = joblib.load(f)
+
+    img_df = img_df.loc[
+             img_df.cam_id.apply(lambda x: x in CAM_ID_LIST), :
+             ].reset_index(drop=True)  # 筛选在 CAM_ID_LIST 内的 img_df
     dataset_dir = os.path.join(SAVE_DIR, '_'.join(CAM_ID_LIST) + '_' + str(DOWN_SAMPLING_RATE))  # 保存数据集的目录
     utils.create_dir([dataset_dir])  # 创建目录
 
@@ -778,7 +788,10 @@ def main():
 
     # 两两计算数据集并放入保存队列
     if not os.path.isfile(os.path.join(dataset_dir, 'feat_label', 'count_dict.pkl')):
-        p = Process(target=produce_dataset, args=(ds_df, os.path.join(dataset_dir, 'feat_label'), span_dict, q,))  # 生产者
+        p = Process(
+            target=produce_dataset,
+            args=(ds_df, car_id_list_tvt_dict, os.path.join(dataset_dir, 'feat_label'), span_dict, q,)
+        )  # 生产者
         # 启动进程
         p.start()
         p.join()
