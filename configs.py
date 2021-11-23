@@ -16,7 +16,7 @@ aic_configs = {
         'NUM_COLS': 3  # 子窗口列数
     },
     'prepare_dataset_configs': {
-        'CAM_ID_LIST': ['c041', 'c043'],  # 数据集中包含的相机列表
+        'CAM_ID_LIST': ['c041', 'c042'],  # 数据集中包含的相机列表
         'DOWN_SAMPLING_RATE': 0.1,  # 下采样率
         'TRAIN_VALI_TEST_RATE': [0.5, 0.25, 0.25],  # 训练集比例
         'SAVE_DIR': './dataset',  # 保存目录
@@ -32,7 +32,7 @@ aic_configs = {
         'RANDOM_SEED': 1,  # 随机种子
         'SAVE_MODEL': True,  # 保存模型
         'TRAIN_DIR': './dataset/c041_c042_0.1/feat_label/train/',  # 训练集目录
-        'TEST_DIR': './dataset/c041_c043_0.1//feat_label/test/',  # 测试集目录
+        'TEST_DIR': './dataset/c041_c042_0.1//feat_label/test/',  # 测试集目录
         'TEST_SAMPLE_RATE': 1.0,  # 测试集采样率
     }
 }

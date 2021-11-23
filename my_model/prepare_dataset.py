@@ -693,7 +693,6 @@ def main():
 
     # 读取场景内全部相机参数
     cam_id_list = list(filter(lambda x: x.startswith('c0'), os.listdir(SCENE_DIR)))
-    cam_id_list = ['c041', 'c042', 'c043']  # 临时  等所有相机交叉口车道划分图完成后删除
     cam_parms_df = pd.DataFrame.from_records(
         list(map(lambda x: get_cam_parms_dict(os.path.join(SCENE_DIR, x)), cam_id_list))
     )
