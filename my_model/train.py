@@ -9,6 +9,7 @@ import argparse
 import os
 import random
 import sys
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -21,6 +22,20 @@ from tqdm import tqdm
 
 sys.path.append('../')
 import utils
+
+# 读取配置文件
+aic_configs = utils.get_aic_configs(Path(__file__).parents[1])
+BATCH_SIZE = aic_configs['train_configs']['BATCH_SIZE']  # 训练 batch_size
+TEST_BATCH_SIZE = aic_configs['train_configs']['TEST_BATCH_SIZE']  # 测试 batch_size
+EPOCHS = aic_configs['train_configs']['EPOCHS']  # 训练次数
+LEARNING_RATE = aic_configs['train_configs']['LEARNING_RATE']  # 学习率
+GAMMA = aic_configs['train_configs']['GAMMA']  # 学习率衰减系数
+NO_CUDA = aic_configs['train_configs']['NO_CUDA']  # 关闭 CUDA
+RANDOM_SEED = aic_configs['train_configs']['RANDOM_SEED']  # 随机种子
+SAVE_MODEL = aic_configs['train_configs']['SAVE_MODEL']  # 保存模型
+TRAIN_DIR = aic_configs['train_configs']['TRAIN_DIR']  # 训练集目录
+TEST_DIR = aic_configs['train_configs']['TEST_DIR']  # 测试集目录
+TEST_SAMPLE_RATE = aic_configs['train_configs']['TEST_SAMPLE_RATE']  # 测试集下采样率
 
 
 class My_Dataset(Dataset):
@@ -37,7 +52,7 @@ class My_Dataset(Dataset):
         for data_path in tqdm(data_path_list):
             data = np.load(data_path).tolist()
             random.shuffle(data)
-            data = data[0:int(len(data)*rate)]
+            data = data[0:int(len(data) * rate)]
             self.data += data
         self.data = np.array(self.data)
 
@@ -61,8 +76,8 @@ class My_Dataset(Dataset):
         """
         获取单个数据
         """
-        # feat = torch.from_numpy(self.data[index][0:-2]).float()  # x,y,t,od,img 特征
-        feat = torch.from_numpy(self.data[index][4:-2]).float()  # img 特征
+        feat = torch.from_numpy(self.data[index][0:-2]).float()  # x,y,t,od,img 特征
+        # feat = torch.from_numpy(self.data[index][4:-2]).float()  # img 特征
         label = torch.from_numpy(self.data[index][-1:]).long()
 
         return feat, label
@@ -88,8 +103,8 @@ class Net(nn.Module):
         super(Net, self).__init__()
         self.dropout1 = nn.Dropout(0.25)
         self.dropout2 = nn.Dropout(0.5)
-        # self.fc1 = nn.Linear(12292, 1024)  # x,y,t,od,img 特征
-        self.fc1 = nn.Linear(12288, 1024)  # img 特征
+        self.fc1 = nn.Linear(12292, 1024)  # x,y,t,od,img 特征
+        # self.fc1 = nn.Linear(12288, 1024)  # img 特征
         self.fc2 = nn.Linear(1024, 16)
         self.fc3 = nn.Linear(16, 2)
 
@@ -103,25 +118,6 @@ class Net(nn.Module):
         x = self.fc3(x)
         output = F.log_softmax(x, dim=1)
         return output
-
-
-def parse_args():
-    """
-    解析命令行参数
-    """
-
-    parser = argparse.ArgumentParser(description='训练模型')
-    parser.add_argument('--batch_size', type=int, default=64, metavar='N', help='训练 batch_size（默认： 64）')
-    parser.add_argument('--test_batch_size', type=int, default=64, metavar='N', help='测试 batch_size（默认： 64）')
-    parser.add_argument('--epochs', type=int, default=10, metavar='N', help='训练次数（默认： 10）')
-    parser.add_argument('--lr', type=float, default=1e-4, metavar='LR', help='学习率（默认： 1e-4）')
-    parser.add_argument('--gamma', type=float, default=0.7, metavar='M', help='学习率阶跃（默认： 0.7）')
-    parser.add_argument('--no_cuda', action='store_true', default=False, help=' 关闭 CUDA')
-    parser.add_argument('--seed', type=int, default=1, metavar='S', help='随机种子（默认： 1）')
-    parser.add_argument('--save_model', action='store_true', default=False, help='保存当前模型')
-    args = parser.parse_args()
-
-    return args
 
 
 def my_mse_loss(x, y, device):
@@ -183,21 +179,18 @@ def main():
     主程序
     """
 
-    # 训练设置，命令行参数
-    args = parse_args()
-
     # 检查是否使用 cuda
-    use_cuda = not args.no_cuda and torch.cuda.is_available()
+    use_cuda = not NO_CUDA and torch.cuda.is_available()
 
     # 随机种子
-    torch.manual_seed(args.seed)
+    torch.manual_seed(RANDOM_SEED)
 
     # 设备
     device = torch.device("cuda" if use_cuda else "cpu")
 
     # 训练和测试的 batch_size
-    train_kwargs = {'batch_size': args.batch_size}
-    test_kwargs = {'batch_size': args.test_batch_size}
+    train_kwargs = {'batch_size': BATCH_SIZE}
+    test_kwargs = {'batch_size': TEST_BATCH_SIZE}
 
     # 使用 cuda
     if use_cuda:
@@ -211,31 +204,29 @@ def main():
 
     # 导入数据集
     # 测试集
-    test_dir = './dataset/feat_label/test/'
-    test_path_list = list(map(lambda x: os.path.join(test_dir, x), os.listdir(test_dir)))
-    dataset_test = My_Dataset(test_path_list, 'test', 0.1)
+    test_path_list = list(map(lambda x: os.path.join(TEST_DIR, x), os.listdir(TEST_DIR)))
+    dataset_test = My_Dataset(test_path_list, 'test', TEST_SAMPLE_RATE)
     test_loader = torch.utils.data.DataLoader(dataset_test, **test_kwargs)
     del dataset_test
 
     # 训练集
-    train_dir = './dataset/feat_label/train/'
-    train_path_list = list(map(lambda x: os.path.join(train_dir, x), os.listdir(train_dir)))
+    train_path_list = list(map(lambda x: os.path.join(TRAIN_DIR, x), os.listdir(TRAIN_DIR)))
     train_path_list_2 = utils.chunks(train_path_list, 30)
 
     model = Net().to(device)  # 实例化 model
 
     # 优化器与调度器
-    optimizer = optim.SGD(model.parameters(), lr=args.lr)
-    scheduler = StepLR(optimizer, step_size=1, gamma=args.gamma)
+    optimizer = optim.SGD(model.parameters(), lr=LEARNING_RATE)
+    scheduler = StepLR(optimizer, step_size=1, gamma=GAMMA)
 
     # 训练
     epoch_mini = 10
-    epoch_num = int(args.epochs / epoch_mini)
+    epoch_num = int(EPOCHS / epoch_mini)
     for i in range(epoch_num):
-        print(f'\n[{i+1}/{epoch_num}]')
+        print(f'\n[{i + 1}/{epoch_num}]')
         for j, train_path_list in enumerate(train_path_list_2):
             # 导入训练集
-            print(f'\n[{j+1}/{len(train_path_list_2)}]')
+            print(f'\n[{j + 1}/{len(train_path_list_2)}]')
             dataset_train = My_Dataset(train_path_list, 'train')
             train_loader = torch.utils.data.DataLoader(dataset_train, **train_kwargs)
             del dataset_train
@@ -245,8 +236,8 @@ def main():
         scheduler.step()
 
     # 保存模型
-    if args.save_model:
-        torch.save(model.state_dict(), "mtmc.pt")
+    if SAVE_MODEL:
+        torch.save(model.state_dict(), os.path.join(Path(TRAIN_DIR).parents[1], 'mtmc.pt'))
 
 
 if __name__ == '__main__':
