@@ -5,7 +5,6 @@
 @Description: 训练数据集
 """
 
-import argparse
 import os
 import random
 import sys
@@ -36,6 +35,8 @@ SAVE_MODEL = aic_configs['train_configs']['SAVE_MODEL']  # 保存模型
 TRAIN_DIR = aic_configs['train_configs']['TRAIN_DIR']  # 训练集目录
 TEST_DIR = aic_configs['train_configs']['TEST_DIR']  # 测试集目录
 TEST_SAMPLE_RATE = aic_configs['train_configs']['TEST_SAMPLE_RATE']  # 测试集下采样率
+ONLY_IMG_FEAT = aic_configs['train_configs']['ONLY_IMG_FEAT']  # 仅 img 特征
+TRAIN_FILE_BATCH_SIZE = aic_configs['train_configs']['TRAIN_FILE_BATCH_SIZE']  # 训练集文件 batch_size，每次读 batch_size 个文件进内存
 
 
 class My_Dataset(Dataset):
@@ -76,8 +77,8 @@ class My_Dataset(Dataset):
         """
         获取单个数据
         """
-        feat = torch.from_numpy(self.data[index][0:-2]).float()  # x,y,t,od,img 特征
-        # feat = torch.from_numpy(self.data[index][4:-2]).float()  # img 特征
+        feat_index_start = 4 if ONLY_IMG_FEAT else 0
+        feat = torch.from_numpy(self.data[index][feat_index_start:-2]).float()
         label = torch.from_numpy(self.data[index][-1:]).long()
 
         return feat, label
@@ -103,8 +104,8 @@ class Net(nn.Module):
         super(Net, self).__init__()
         self.dropout1 = nn.Dropout(0.25)
         self.dropout2 = nn.Dropout(0.5)
-        self.fc1 = nn.Linear(12292, 1024)  # x,y,t,od,img 特征
-        # self.fc1 = nn.Linear(12288, 1024)  # img 特征
+        feat_len = 12288 if ONLY_IMG_FEAT else 12292
+        self.fc1 = nn.Linear(feat_len, 1024)
         self.fc2 = nn.Linear(1024, 16)
         self.fc3 = nn.Linear(16, 2)
 
@@ -211,7 +212,7 @@ def main():
 
     # 训练集
     train_path_list = list(map(lambda x: os.path.join(TRAIN_DIR, x), os.listdir(TRAIN_DIR)))
-    train_path_list_2 = utils.chunks(train_path_list, 30)
+    train_path_list_2 = utils.chunks(train_path_list, TRAIN_FILE_BATCH_SIZE)
 
     model = Net().to(device)  # 实例化 model
 
@@ -237,7 +238,8 @@ def main():
 
     # 保存模型
     if SAVE_MODEL:
-        torch.save(model.state_dict(), os.path.join(Path(TRAIN_DIR).parents[1], 'mtmc.pt'))
+        model_name = 'mtmc_no_ts.pt' if ONLY_IMG_FEAT else 'mtmc.pt'
+        torch.save(model.state_dict(), os.path.join(Path(TRAIN_DIR).parents[1], model_name))
 
 
 if __name__ == '__main__':
