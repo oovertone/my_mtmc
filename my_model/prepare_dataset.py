@@ -56,7 +56,7 @@ class Save_Dataset(object):
         """
         更新保存路径
         """
-        pass
+        raise NotImplementedError
 
     def queue_up(self, q, batch_size, last=False):
         """
