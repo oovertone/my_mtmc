@@ -121,15 +121,12 @@ class Net(nn.Module):
         return output
 
 
-def my_mse_loss(x, y, device):
+def my_mse_loss():
     """
-    自定义 mse loss
+    自定义loss
     """
-
-    k = torch.ones([len(y), 1], device=device)
-    k[y == 1] = 9
-
-    return torch.mean(torch.pow((x - y) * k, 2))
+    
+    pass
 
 
 def train(model, device, train_loader, optimizer):
