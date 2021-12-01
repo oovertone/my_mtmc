@@ -19,7 +19,6 @@ import pandas as pd
 from geopy.distance import geodesic
 from sklearn.model_selection import train_test_split
 from tqdm import tqdm
-from abc import ABCMeta, abstractmethod
 
 sys.path.append('../')
 import utils
@@ -38,7 +37,7 @@ SAVE_DIR = aic_configs['prepare_dataset_configs']['SAVE_DIR']  # 保存路径
 BATCH_SIZE = aic_configs['prepare_dataset_configs']['BATCH_SIZE']  # 批次大小
 
 
-class Save_Dataset(metaclass=ABCMeta):
+class Save_Dataset(object):
     """
     保存 Dataset 类
     """
@@ -53,12 +52,11 @@ class Save_Dataset(metaclass=ABCMeta):
         self.save_dir = save_dir
         self.save_path = ""
 
-    @abstractmethod
     def update_save_path(self):
         """
         更新保存路径
         """
-        pass
+        raise NotImplementedError
 
     def queue_up(self, q, batch_size, last=False):
         """
