@@ -19,6 +19,7 @@ import pandas as pd
 from geopy.distance import geodesic
 from sklearn.model_selection import train_test_split
 from tqdm import tqdm
+from abc import ABCMeta, abstractmethod
 
 sys.path.append('../')
 import utils
@@ -37,7 +38,7 @@ SAVE_DIR = aic_configs['prepare_dataset_configs']['SAVE_DIR']  # 保存路径
 BATCH_SIZE = aic_configs['prepare_dataset_configs']['BATCH_SIZE']  # 批次大小
 
 
-class Save_Dataset(object):
+class Save_Dataset(metaclass=ABCMeta):
     """
     保存 Dataset 类
     """
@@ -52,11 +53,12 @@ class Save_Dataset(object):
         self.save_dir = save_dir
         self.save_path = ""
 
+    @abstractmethod
     def update_save_path(self):
         """
         更新保存路径
         """
-        raise NotImplementedError
+        pass
 
     def queue_up(self, q, batch_size, last=False):
         """
@@ -70,7 +72,6 @@ class Save_Dataset(object):
                 self.update_save_path()
 
                 data = self.dataset_list.copy()  # 复制一份数据
-
                 save_dict = {
                     'data': data[0:batch_size],
                     'save_path': self.save_path
@@ -94,7 +95,7 @@ class TVT_Dataset(Save_Dataset):
         """
 
         super().__init__(save_dir)
-        self.train_vali_test = train_vali_test  # 是否为同一相机
+        self.train_vali_test = train_vali_test  # 数据集类别
 
     def update_save_path(self):
         """
