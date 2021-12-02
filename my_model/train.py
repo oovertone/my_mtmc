@@ -11,6 +11,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -50,6 +51,7 @@ class My_Dataset(Dataset):
         """
         # 遍历组合数据
         self.data = []
+        self.test_data = []
         for data_path in tqdm(data_path_list):
             data = np.load(data_path).tolist()
             random.shuffle(data)
@@ -60,6 +62,20 @@ class My_Dataset(Dataset):
         if train_test == 'train':
             data_1 = list(self.data[self.data[:, -1] == 1, :])
             data_0 = list(self.data[self.data[:, -1] == 0, :])
+
+            # # 新增异同相机，异同车辆分类
+            # car_1_flag = self.data[:, -1] == 1
+            # car_0_flag = self.data[:, -1] == 0
+            # same_diff = self.data[:, -2] == 1
+            # diff_cam_flag = self.data[:, -2] == 0
+            # data_same_1 = list(self.data[same_diff & car_1_flag, :])
+            # data_same_0 = list(self.data[same_diff & car_0_flag, :])
+            # data_diff_1 = list(self.data[diff_cam_flag & car_1_flag, :])
+            # data_diff_0 = list(self.data[diff_cam_flag & car_0_flag, :])
+            # data_same = list(self.data[self.data[:, -2] == 1, :])
+            # data_diff = list(self.data[self.data[:, -2] == 0, :])
+            #
+            # self.test_data += data_same_1
 
             # 平衡正负样本
             if len(data_1) >= len(data_0):
@@ -79,9 +95,10 @@ class My_Dataset(Dataset):
         """
         feat_index_start = 4 if ONLY_IMG_FEAT else 0
         feat = torch.from_numpy(self.data[index][feat_index_start:-2]).float()
+        same_diff = torch.from_numpy(self.data[index][-2:-1]).long()
         label = torch.from_numpy(self.data[index][-1:]).long()
 
-        return feat, label
+        return feat, same_diff, label
 
     def __len__(self):
         """
@@ -121,15 +138,82 @@ class Net(nn.Module):
         return output
 
 
-def my_mse_loss(x, y, device):
+def my_loss():
     """
     自定义 mse loss
     """
 
-    k = torch.ones([len(y), 1], device=device)
-    k[y == 1] = 9
+    pass
 
-    return torch.mean(torch.pow((x - y) * k, 2))
+
+def cal_loss_num(label, same_diff, output, label_assign=-1, same_diff_assign=-1):
+    """
+    计算 loss num
+    """
+
+    pred = output.argmax(dim=1, keepdim=True)  # 计算预测值
+    idx_label, idx_same_diff = (_ := torch.ones(len(pred)) > 0), _.clone()  # 初始化布尔索引
+
+    # 筛选
+    if (label_assign > -1) and (same_diff_assign > -1):
+        idx_label = label == label_assign
+        idx_same_diff = same_diff == same_diff_assign
+    idx = idx_label & idx_same_diff
+    pred_sel = pred[idx]
+    label_sel = label[idx]
+    output_sel = output[idx.flatten()]
+
+    loss = F.nll_loss(output_sel, label_sel.flatten())
+    num_total = len(pred_sel)
+    num_correct = pred_sel.eq(label_sel.view_as(pred_sel)).sum().item()
+
+    loss_num_dict = {
+        'label_assign': label_assign,
+        'same_diff_assign': same_diff_assign,
+        'loss': loss,
+        'num_total': num_total,
+        'num_correct': num_correct
+    }
+
+    return loss_num_dict
+
+
+def print_loss_acc(loss_num_list, train_test):
+    """
+    打印 loss acc
+    """
+
+    def pla(df, label_assign=-1, same_diff_assign=-1):
+        """
+        打印结果
+        """
+
+        loss_mean = np.round(np.mean(df.loss), 4)
+        num_correct = np.sum(df.num_correct)
+        num_total = np.sum(df.num_total)
+        acc = np.round(num_correct / num_total * 100, 4)
+
+        if (label_assign > -1) and (same_diff_assign > -1):
+            print(f'{train_test}：同一辆车：{label_assign}， 同一相机:{same_diff_assign}， 平均loss：{loss_mean}，准确率：{acc} % [{num_correct} / {num_total}]')
+        else:
+            print(f'{train_test}：总体： 平均loss：{loss_mean}，准确率：{acc} % [{num_correct} / {num_total}]')
+
+    print('-' * 100)
+    # 总体结果
+    loss_num_list = list(filter(lambda x: ~np.isnan(x['loss'].item()), loss_num_list))  # 剔除 nan
+    loss_num_df = pd.DataFrame.from_records(loss_num_list)
+    loss_num_df['loss'] = loss_num_df['loss'].apply(lambda x: x.item())
+    pla(loss_num_df)
+
+    # 分类结果
+    assign = [0, 1]
+    for label_assign in assign:
+        for same_diff_assign in assign:
+            loss_num_df_sel = loss_num_df.loc[
+                (loss_num_df.label_assign == label_assign) & (loss_num_df.same_diff_assign == same_diff_assign), :
+                ]
+            pla(loss_num_df_sel, label_assign, same_diff_assign)
+    print('-' * 100)
 
 
 def train(model, device, train_loader, optimizer):
@@ -138,21 +222,26 @@ def train(model, device, train_loader, optimizer):
     """
 
     model.train()
-    correct_num = 0
-    loss_mean = 0
-    for batch_idx, (data, target) in enumerate(train_loader):
-        data, target = data.to(device), target.to(device)
+
+    loss_num_list = []
+    for batch_idx, (feat, same_diff, label) in enumerate(train_loader):
+        feat, same_diff, label = feat.to(device), same_diff.to(device), label.to(device)
         optimizer.zero_grad()
-        output = model(data)
-        loss = F.nll_loss(output, target.flatten())
+        output = model(feat)
+
+        # 分类计算
+        assign = [0, 1]
+        for label_assign in assign:
+            for same_diff_assign in assign:
+                loss_num_dict = cal_loss_num(label, same_diff, output, label_assign, same_diff_assign)
+                loss_num_list.append(loss_num_dict)
+
+        # 总体计算
+        loss_num_dict = cal_loss_num(label, same_diff, output)
+        loss = loss_num_dict['loss']
         loss.backward()
-        loss_mean += loss.item()
         optimizer.step()
-        pred = output.argmax(dim=1, keepdim=True)
-        correct_num += pred.eq(target.view_as(pred)).sum().item()
-    loss_mean = np.round(loss_mean / len(train_loader), 4)
-    accuracy = int(100 * correct_num / len(train_loader.dataset))
-    print(f'训练集：平均loss：{loss_mean}，准确率：{accuracy}% [{correct_num}/{len(train_loader.dataset)}]', end=' / ')
+    print_loss_acc(loss_num_list, '训练集')
 
 
 def test(model, device, test_loader):
@@ -161,18 +250,18 @@ def test(model, device, test_loader):
     """
 
     model.eval()
-    loss_mean = 0
-    correct_num = 0
+    loss_num_list = []
     with torch.no_grad():
-        for data, target in test_loader:
-            data, target = data.to(device), target.to(device)
-            output = model(data)
-            loss_mean += F.nll_loss(output, target.flatten()).item()
-            pred = output.argmax(dim=1, keepdim=True)
-            correct_num += pred.eq(target.view_as(pred)).sum().item()
-    loss_mean = np.round(loss_mean / len(test_loader), 4)
-    accuracy = int(100 * correct_num / len(test_loader.dataset))
-    print(f'测试集：平均loss：{loss_mean}，准确率：{accuracy}% [{correct_num}/{len(test_loader.dataset)}]')
+        for feat, same_diff, label in test_loader:
+            feat, same_diff, label = feat.to(device), same_diff.to(device), label.to(device)
+            output = model(feat)
+            # 分类计算
+            assign = [0, 1]
+            for label_assign in assign:
+                for same_diff_assign in assign:
+                    loss_num_dict = cal_loss_num(label, same_diff, output, label_assign, same_diff_assign)
+                    loss_num_list.append(loss_num_dict)
+        print_loss_acc(loss_num_list, '测试集')
 
 
 def main():
@@ -232,8 +321,10 @@ def main():
             train_loader = torch.utils.data.DataLoader(dataset_train, **train_kwargs)
             del dataset_train
             for k in range(epoch_mini):
+                print('=' * 100)
                 train(model, device, train_loader, optimizer)
                 test(model, device, test_loader)
+                print('=' * 100)
         scheduler.step()
 
     # 保存模型
