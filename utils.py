@@ -165,6 +165,7 @@ def multi_cam_filter(in_df, n):
         cam_id_list = np.unique(img_sel_df.cam_id)
         if len(cam_id_list) >= n:
             out_df = out_df.append(img_sel_df)
+            print(car_id)
     out_df = out_df.reset_index(drop=True)
     return out_df
 
@@ -196,3 +197,13 @@ def false_2_true(x, thr):
     if not x:
         x = x or (random.random() < thr)
     return x
+
+
+def whether_same_cam(i, j):
+
+    return 1
+
+
+def whether_same_car(i, j):
+
+    return 1

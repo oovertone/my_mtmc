@@ -94,7 +94,7 @@ class TVT_Dataset(Save_Dataset):
         """
 
         super().__init__(save_dir)
-        self.train_vali_test = train_vali_test  # 是否为同一相机
+        self.train_vali_test = train_vali_test  # 是否为同一相机 #TODO ?
 
     def update_save_path(self):
         """
@@ -362,7 +362,7 @@ def cal_od_matrix(lane_color_df, df):
     return od_matrix
 
 
-def down_sampling(img_df):
+def down_sampling(img_df, down_sampling_rate):
     """
     下采样
     """
@@ -374,10 +374,10 @@ def down_sampling(img_df):
         car_id_list = np.unique(img_sel_df.car_id)
         for car_id in car_id_list:
             img_sel_sel_df = img_sel_df.loc[img_sel_df.car_id == car_id, :]
-            if len(img_sel_sel_df) * DOWN_SAMPLING_RATE < 1:
+            if len(img_sel_sel_df) * down_sampling_rate < 1:
                 rate = 1.1 / len(img_sel_sel_df)
             else:
-                rate = DOWN_SAMPLING_RATE
+                rate = down_sampling_rate
             sel_df, _ = train_test_split(img_sel_sel_df, test_size=1 - rate)
             ds_df = ds_df.append(sel_df)
     ds_df = ds_df.reset_index(drop=True)
@@ -638,13 +638,23 @@ def produce_dataset(ds_df, car_id_list_tvt_dict, save_dir, span_dict, q):
             continue
 
         for j in range(len(ds_sel_df)):
+            # 如果两个样本在同一相机，再做一轮下采样
+            # if (ds_df.cam_id[i] == ds_sel_df.cam_id[j]) and (utils.false_2_true(0, 1 - DOWN_SAMPLING_RATE[0] / DOWN_SAMPLING_RATE[1])):
+            #     continue
+            # # 如果两个样本在不同相机 不同车辆，再做一轮下采样
+            # if (ds_df.cam_id[i] != ds_sel_df.cam_id[j]) and \
+            #         (ds_df.car_id[i] != ds_sel_df.car_id[j]) and \
+            #         (utils.false_2_true(0, 1 - (DOWN_SAMPLING_RATE[0] / DOWN_SAMPLING_RATE[1]) ** 1)):
+            #     continue
+
+            # # 根据车辆 id 判断属于 训练集 验证集 测试集
             tvt = get_tvt(ds_df.car_id[i], ds_sel_df.car_id[j])
             if not tvt:
                 continue
 
             feat_label_list = cal_feat_label_list()  # 计算特征
 
-            # 分配
+            # 计数
             if ds_sel_df.cam_id[j] == ds_df.cam_id[i]:  # 同一个相机
                 if ds_sel_df.car_id[j] == ds_df.car_id[i]:  # true
                     count_dict['num_same_dict']['num_1'] += 1
@@ -750,7 +760,7 @@ def main():
     utils.create_dir([dataset_dir])  # 创建目录
 
     # 帧下采样
-    ds_df = down_sampling(img_df)
+    ds_df = down_sampling(img_df, DOWN_SAMPLING_RATE[1])
 
     # 提取 reid 特征
     if not os.path.isfile(os.path.join(dataset_dir, 'ds_df.pkl')):

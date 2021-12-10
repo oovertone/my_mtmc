@@ -60,32 +60,36 @@ class My_Dataset(Dataset):
         self.data = np.array(self.data)
 
         if train_test == 'train':
-            data_1 = list(self.data[self.data[:, -1] == 1, :])
-            data_0 = list(self.data[self.data[:, -1] == 0, :])
-
-            # # 新增异同相机，异同车辆分类
-            # car_1_flag = self.data[:, -1] == 1
-            # car_0_flag = self.data[:, -1] == 0
-            # same_diff = self.data[:, -2] == 1
-            # diff_cam_flag = self.data[:, -2] == 0
-            # data_same_1 = list(self.data[same_diff & car_1_flag, :])
-            # data_same_0 = list(self.data[same_diff & car_0_flag, :])
-            # data_diff_1 = list(self.data[diff_cam_flag & car_1_flag, :])
-            # data_diff_0 = list(self.data[diff_cam_flag & car_0_flag, :])
+            # 新增异同相机，异同车辆分类
+            car_1_flag = self.data[:, -1] == 1  # 两个样本是同一车辆
+            car_0_flag = self.data[:, -1] == 0  # 两个样本是不同车辆
+            same_diff = self.data[:, -2] == 1  # 两个样本是同一相机
+            diff_cam_flag = self.data[:, -2] == 0  # 两个样本是不同相机
+            data_same_1 = list(self.data[same_diff & car_1_flag, :])
+            data_same_0 = list(self.data[same_diff & car_0_flag, :])
+            data_diff_1 = list(self.data[diff_cam_flag & car_1_flag, :])
+            data_diff_0 = list(self.data[diff_cam_flag & car_0_flag, :])
+            # data_1 = list(self.data[self.data[:, -1] == 1, :])
+            # data_0 = list(self.data[self.data[:, -1] == 0, :])
             # data_same = list(self.data[self.data[:, -2] == 1, :])
             # data_diff = list(self.data[self.data[:, -2] == 0, :])
-            #
-            # self.test_data += data_same_1
 
-            # 平衡正负样本
-            if len(data_1) >= len(data_0):
-                data_m, data_l = data_1, data_0
-            else:
-                data_m, data_l = data_0, data_1
+            # 平衡所有类别样本
+            len_data_min = np.min([len(data_same_1), len(data_same_0), len(data_diff_1), len(data_diff_0)])
 
-            random.shuffle(data_m)
-            data_m = data_m[0:len(data_l)]
-            self.data = data_l + data_m
+            random.shuffle(data_same_1)
+            data_same_1 = data_same_1[0:len_data_min]
+
+            random.shuffle(data_same_0)
+            data_same_0 = data_same_0[0:len_data_min]
+
+            random.shuffle(data_diff_1)
+            data_diff_1 = data_diff_1[0:len_data_min]
+
+            random.shuffle(data_diff_0)
+            data_diff_0 = data_diff_0[0:len_data_min]
+
+            self.data = data_same_1 + data_same_0 + data_diff_1 + data_diff_0
             random.shuffle(self.data)
             self.data = np.array(self.data)
 
