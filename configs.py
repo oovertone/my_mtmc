@@ -38,3 +38,4 @@ aic_configs = {
         'TRAIN_FILE_BATCH_SIZE': 30,  # 训练集文件 batch_size，每次读 batch_size 个文件进内存
     }
 }
+
