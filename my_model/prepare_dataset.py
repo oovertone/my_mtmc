@@ -639,15 +639,16 @@ def produce_dataset(ds_df, car_id_list_tvt_dict, save_dir, span_dict, q):
 
         for j in range(len(ds_sel_df)):
             # 如果两个样本在同一相机，再做一轮下采样
-            # if (ds_df.cam_id[i] == ds_sel_df.cam_id[j]) and (utils.false_2_true(0, 1 - DOWN_SAMPLING_RATE[0] / DOWN_SAMPLING_RATE[1])):
-            #     continue
-            # # 如果两个样本在不同相机 不同车辆，再做一轮下采样
+            if (ds_df.cam_id[i] == ds_sel_df.cam_id[j]) and (utils.false_2_true(0, 1 - DOWN_SAMPLING_RATE[0] / DOWN_SAMPLING_RATE[1])):
+                continue
+
+            # 如果两个样本在不同相机 不同车辆，再做一轮下采样
             # if (ds_df.cam_id[i] != ds_sel_df.cam_id[j]) and \
             #         (ds_df.car_id[i] != ds_sel_df.car_id[j]) and \
-            #         (utils.false_2_true(0, 1 - (DOWN_SAMPLING_RATE[0] / DOWN_SAMPLING_RATE[1]) ** 1)):
+            #         (utils.false_2_true(0, 1 - (DOWN_SAMPLING_RATE[0] / DOWN_SAMPLING_RATE[1]) ** 0.8)):
             #     continue
 
-            # # 根据车辆 id 判断属于 训练集 验证集 测试集
+            # 根据车辆 id 判断属于 训练集 验证集 测试集
             tvt = get_tvt(ds_df.car_id[i], ds_sel_df.car_id[j])
             if not tvt:
                 continue
