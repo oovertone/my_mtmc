@@ -100,8 +100,11 @@ class TVT_Dataset(Save_Dataset):
         """
         更新保存路径
         """
+        # self.save_path = os.path.join(
+        #     self.save_dir, self.train_vali_test, f'{self.train_vali_test}_{self.file_num}.npy'
+        # )
         self.save_path = os.path.join(
-            self.save_dir, self.train_vali_test, f'{self.train_vali_test}_{self.file_num}.npy'
+            self.save_dir, f'{self.train_vali_test}_{self.file_num}.npy'
         )
 
 
@@ -517,6 +520,19 @@ def consume_dataset(q):
         q.task_done()
 
 
+def get_sample_category(feat_label_list):
+    if feat_label_list[-2] == 1:  # 同相机
+        if feat_label_list[-1] == 1:  # 同相机同辆车
+            return 'same_1'
+        else:  # 同相机不同车
+            return 'same_0'
+    else:  # 不同相机
+        if feat_label_list[-1] == 1:  # 不同相机同辆车
+            return 'diff_1'
+        else:  # 不同相机不同车
+            return 'diff_0'
+
+
 def produce_dataset(ds_df, car_id_list_tvt_dict, save_dir, span_dict, q):
     """
     生产：两两计算数据集并保存
@@ -546,11 +562,33 @@ def produce_dataset(ds_df, car_id_list_tvt_dict, save_dir, span_dict, q):
             }
         }
 
-        # 初始化 TVT 对象
+        # # 初始化 TVT 对象
+        # tvt_dataset_dict = {
+        #     'train': TVT_Dataset('train', save_dir),
+        #     'vali': TVT_Dataset('vali', save_dir),
+        #     'test': TVT_Dataset('test', save_dir)
+        # }
+
+        # 初始化 TVT 对象（分类）
         tvt_dataset_dict = {
-            'train': TVT_Dataset('train', save_dir),
-            'vali': TVT_Dataset('vali', save_dir),
-            'test': TVT_Dataset('test', save_dir)
+            'train': {
+                'same_1': TVT_Dataset('train', os.path.join(save_dir, 'train', 'same_1')), # TODO 更改成 vali/same_0，现在是 same_0/vali
+                'same_0': TVT_Dataset('train', os.path.join(save_dir, 'train', 'same_0')),
+                'diff_1': TVT_Dataset('train', os.path.join(save_dir, 'train', 'diff_1')),
+                'diff_0': TVT_Dataset('train', os.path.join(save_dir, 'train', 'diff_0')),
+            },
+            'vali': {
+                'same_1': TVT_Dataset('vali', os.path.join(save_dir, 'vali', 'same_1')),
+                'same_0': TVT_Dataset('vali', os.path.join(save_dir, 'vali', 'same_0')),
+                'diff_1': TVT_Dataset('vali', os.path.join(save_dir, 'vali', 'diff_1')),
+                'diff_0': TVT_Dataset('vali', os.path.join(save_dir, 'vali', 'diff_0')),
+            },
+            'test': {
+                'same_1': TVT_Dataset('test', os.path.join(save_dir, 'test', 'same_1')),
+                'same_0': TVT_Dataset('test', os.path.join(save_dir, 'test', 'same_0')),
+                'diff_1': TVT_Dataset('test', os.path.join(save_dir, 'test', 'diff_1')),
+                'diff_0': TVT_Dataset('test', os.path.join(save_dir, 'test', 'diff_0')),
+            },
         }
 
         return count_dict, tvt_dataset_dict
@@ -639,7 +677,7 @@ def produce_dataset(ds_df, car_id_list_tvt_dict, save_dir, span_dict, q):
 
         for j in range(len(ds_sel_df)):
             # 如果两个样本在同一相机，再做一轮下采样
-            if (ds_df.cam_id[i] == ds_sel_df.cam_id[j]) and (utils.false_2_true(0, 1 - DOWN_SAMPLING_RATE[0] / DOWN_SAMPLING_RATE[1])):
+            if (ds_df.cam_id[i] == ds_sel_df.cam_id[j]) and (utils.false_2_true(0, abs(1 - DOWN_SAMPLING_RATE[0] / DOWN_SAMPLING_RATE[1]))):
                 continue
 
             # 如果两个样本在不同相机 不同车辆，再做一轮下采样
@@ -676,18 +714,20 @@ def produce_dataset(ds_df, car_id_list_tvt_dict, save_dir, span_dict, q):
 
             # 按概率分到 train，vali，test
             if tvt == 'train':
-                tvt_dataset_dict['train'].dataset_list.append(feat_label_list)
+                tvt_dataset_dict['train'][get_sample_category(feat_label_list)].dataset_list.append(feat_label_list)  #这里先判断样本类别key，再进行存储
             elif tvt == 'vali':
-                tvt_dataset_dict['vali'].dataset_list.append(feat_label_list)
+                tvt_dataset_dict['vali'][get_sample_category(feat_label_list)].dataset_list.append(feat_label_list)
             else:
-                tvt_dataset_dict['test'].dataset_list.append(feat_label_list)
+                tvt_dataset_dict['test'][get_sample_category(feat_label_list)].dataset_list.append(feat_label_list)
             # 依次向保存队列中生产数据
-            for key in tvt_dataset_dict:
-                q = tvt_dataset_dict[key].queue_up(q, BATCH_SIZE[1])
+            for key in tvt_dataset_dict:  # train, vali, test
+                for key2 in tvt_dataset_dict[key]:  # same, diff, 1, 0
+                    q = tvt_dataset_dict[key][key2].queue_up(q, BATCH_SIZE[1])
 
-    for key in tvt_dataset_dict:
-        if len(tvt_dataset_dict[key].dataset_list):
-            q = tvt_dataset_dict[key].queue_up(q, BATCH_SIZE[1], last=True)
+    for key in tvt_dataset_dict:  # train, vali, test
+        for key2 in tvt_dataset_dict[key]:  # same, diff, 1, 0
+            if len(tvt_dataset_dict[key][key2].dataset_list):
+                q = tvt_dataset_dict[key][key2].queue_up(q, BATCH_SIZE[1], last=True)
 
     q.put({
         'data': count_dict,

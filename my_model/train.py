@@ -81,13 +81,15 @@ class My_Dataset(Dataset):
             data_same_1 = data_same_1[0:len_data_min]
 
             random.shuffle(data_same_0)
-            data_same_0 = data_same_0[0:len_data_min]
+            # data_same_0 = data_same_0[0:len_data_min]  # 减少负样本的训练数据
+            data_same_0 = data_same_0[0:int(np.floor(len_data_min / 2))]  # 减少负样本的训练数据
 
             random.shuffle(data_diff_1)
             data_diff_1 = data_diff_1[0:len_data_min]
 
             random.shuffle(data_diff_0)
-            data_diff_0 = data_diff_0[0:len_data_min]
+            # data_diff_0 = data_diff_0[0:len_data_min]  # 减少负样本的训练数据
+            data_diff_0 = data_diff_0[0:int(np.floor(len_data_min / 2))]  # 减少负样本的训练数据
 
             self.data = data_same_1 + data_same_0 + data_diff_1 + data_diff_0
             random.shuffle(self.data)
