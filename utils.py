@@ -174,8 +174,14 @@ def chunks(lst, batch_size):
     """
     按照 BATCH_SIZE 分批
     """
-
-    return [lst[i:i + batch_size] for i in range(0, len(lst), batch_size)]
+    if type(lst) == list:
+        return [lst[i:i + batch_size] for i in range(0, len(lst), batch_size)]
+    if type(lst) == dict:
+        for key in lst:
+            lst[key] = [lst[key][i:i + batch_size] for i in range(0, len(lst[key]), batch_size)]
+        return lst
+    else:
+        return lst
 
 
 def normalization(lst_in):
@@ -197,13 +203,3 @@ def false_2_true(x, thr):
     if not x:
         x = x or (random.random() < thr)
     return x
-
-
-def whether_same_cam(i, j):
-
-    return 1
-
-
-def whether_same_car(i, j):
-
-    return 1

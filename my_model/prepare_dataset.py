@@ -572,7 +572,7 @@ def produce_dataset(ds_df, car_id_list_tvt_dict, save_dir, span_dict, q):
         # 初始化 TVT 对象（分类）
         tvt_dataset_dict = {
             'train': {
-                'same_1': TVT_Dataset('train', os.path.join(save_dir, 'train', 'same_1')), # TODO 更改成 vali/same_0，现在是 same_0/vali
+                'same_1': TVT_Dataset('train', os.path.join(save_dir, 'train', 'same_1')),
                 'same_0': TVT_Dataset('train', os.path.join(save_dir, 'train', 'same_0')),
                 'diff_1': TVT_Dataset('train', os.path.join(save_dir, 'train', 'diff_1')),
                 'diff_0': TVT_Dataset('train', os.path.join(save_dir, 'train', 'diff_0')),

@@ -40,6 +40,35 @@ ONLY_IMG_FEAT = aic_configs['train_configs']['ONLY_IMG_FEAT']  # 仅 img 特征
 TRAIN_FILE_BATCH_SIZE = aic_configs['train_configs']['TRAIN_FILE_BATCH_SIZE']  # 训练集文件 batch_size，每次读 batch_size 个文件进内存
 
 
+def read_dataset_file_path_dict(dataset_dir):
+    """
+    读取数据集目录包含的子文件列表
+    """
+
+    category_list = list(os.listdir(dataset_dir))
+    test_path_value_list = []
+    for category in category_list:
+        path_ = os.path.join(TEST_DIR, category)
+        file_path = list(map(lambda x: os.path.join(path_, x), os.listdir(path_)))
+        test_path_value_list.append(file_path)
+    dataset_file_path_dict = dict(zip(category_list, test_path_value_list))
+
+    return dataset_file_path_dict
+
+
+def get_train_test_path_list(path_dict, batch_size):
+    """
+    按照样本类别抽取数据文件
+    """
+
+    train_path_list = []
+    size = int(batch_size / len(path_dict.keys()))
+    for key in path_dict:
+        list_slice = random.sample(path_dict[key], min(len(path_dict[key]), size))
+        train_path_list += list_slice
+    return train_path_list
+
+
 class My_Dataset(Dataset):
     """
     数据集类
@@ -200,7 +229,8 @@ def print_loss_acc(loss_num_list, train_test):
         acc = np.round(num_correct / num_total * 100, 4)
 
         if (label_assign > -1) and (same_diff_assign > -1):
-            print(f'{train_test}：同一辆车：{label_assign}， 同一相机:{same_diff_assign}， 平均loss：{loss_mean}，准确率：{acc} % [{num_correct} / {num_total}]')
+            print(
+                f'{train_test}：同一辆车：{label_assign}， 同一相机:{same_diff_assign}， 平均loss：{loss_mean}，准确率：{acc} % [{num_correct} / {num_total}]')
         else:
             print(f'{train_test}：总体： 平均loss：{loss_mean}，准确率：{acc} % [{num_correct} / {num_total}]')
 
@@ -216,8 +246,9 @@ def print_loss_acc(loss_num_list, train_test):
     for label_assign in assign:
         for same_diff_assign in assign:
             loss_num_df_sel = loss_num_df.loc[
-                (loss_num_df.label_assign == label_assign) & (loss_num_df.same_diff_assign == same_diff_assign), :
-                ]
+                              (loss_num_df.label_assign == label_assign) & (
+                                      loss_num_df.same_diff_assign == same_diff_assign), :
+                              ]
             pla(loss_num_df_sel, label_assign, same_diff_assign)
     print('-' * 100)
 
@@ -299,15 +330,16 @@ def main():
         test_kwargs.update(cuda_kwargs)
 
     # 导入数据集
-    # 测试集
-    test_path_list = list(map(lambda x: os.path.join(TEST_DIR, x), os.listdir(TEST_DIR)))
+    # 测试集（分类存储）#TODO 训练集分类存储
+    # test_path_list = list(map(lambda x: os.path.join(TEST_DIR, x), os.listdir(TEST_DIR)))
+
+    dataset_file_path_dict_train = read_dataset_file_path_dict(TRAIN_DIR)
+    dataset_file_path_dict_test = read_dataset_file_path_dict(TEST_DIR)
+
+    test_path_list = get_train_test_path_list(dataset_file_path_dict_test, TRAIN_FILE_BATCH_SIZE)
     dataset_test = My_Dataset(test_path_list, 'test', TEST_SAMPLE_RATE)
     test_loader = torch.utils.data.DataLoader(dataset_test, **test_kwargs)
     del dataset_test
-
-    # 训练集
-    train_path_list = list(map(lambda x: os.path.join(TRAIN_DIR, x), os.listdir(TRAIN_DIR)))
-    train_path_list_2 = utils.chunks(train_path_list, TRAIN_FILE_BATCH_SIZE)
 
     model = Net().to(device)  # 实例化 model
 
@@ -316,27 +348,30 @@ def main():
     scheduler = StepLR(optimizer, step_size=1, gamma=GAMMA)
 
     # 训练
-    epoch_mini = 10
-    epoch_num = int(EPOCHS / epoch_mini)
-    for i in range(epoch_num):
-        print(f'\n[{i + 1}/{epoch_num}]')
-        for j, train_path_list in enumerate(train_path_list_2):
-            # 导入训练集
-            print(f'\n[{j + 1}/{len(train_path_list_2)}]')
-            dataset_train = My_Dataset(train_path_list, 'train')
-            train_loader = torch.utils.data.DataLoader(dataset_train, **train_kwargs)
-            del dataset_train
-            for k in range(epoch_mini):
-                print('=' * 100)
-                train(model, device, train_loader, optimizer)
-                test(model, device, test_loader)
-                print('=' * 100)
-        scheduler.step()
+    for i in range(int(EPOCHS)):  # TODO 训练时不同类别的数据控制比例
+        print(f'\n[{i + 1}/{EPOCHS}]')
+        train_path_list = get_train_test_path_list(dataset_file_path_dict_train, TRAIN_FILE_BATCH_SIZE)
+
+        # for j, train_path_list in enumerate(train_path_list_2):
+        # 导入训练集
+        # print(f'\n导入训练集 [{j + 1}/{len(train_path_list)}]')
+        # train_path_list = get_train_test_path_list(dataset_file_path_dict_train, TRAIN_FILE_BATCH_SIZE)
+        # train_path_list_2 = utils.chunks(train_path_list, TRAIN_FILE_BATCH_SIZE)
+
+        dataset_train = My_Dataset(train_path_list, 'train')
+        train_loader = torch.utils.data.DataLoader(dataset_train, **train_kwargs)
+        del dataset_train
+        # for k in range(epoch_mini):
+        print('=' * 100)
+        train(model, device, train_loader, optimizer)
+        test(model, device, test_loader)
+        print('=' * 100)
+    # scheduler.step()
 
     # 保存模型
     if SAVE_MODEL:
         model_name = 'mtmc_no_ts.pt' if ONLY_IMG_FEAT else 'mtmc.pt'
-        torch.save(model.state_dict(), os.path.join(Path(TRAIN_DIR).parents[1], model_name))
+    torch.save(model.state_dict(), os.path.join(Path(TRAIN_DIR).parents[1], model_name))
 
 
 if __name__ == '__main__':

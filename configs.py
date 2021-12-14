@@ -17,7 +17,7 @@ aic_configs = {
     },
     'prepare_dataset_configs': {
         'CAM_ID_LIST': ['c041', 'c042'],  # 数据集中包含的相机列表
-        'DOWN_SAMPLING_RATE': [0.01, 0.02],  # 下采样率 [0]：同相机车辆下采样率，[1]：异相机下采样率
+        'DOWN_SAMPLING_RATE': [0.01, 0.5],  # 下采样率 [0]：同相机车辆下采样率，[1]：异相机下采样率
         'TRAIN_VALI_TEST_RATE': [0.5, 0.25, 0.25],  # 训练集比例
         'SAVE_DIR': './dataset',  # 保存目录
         'BATCH_SIZE': [64, 1024]  # 批次大小：[0]：计算 reid 特征  [1]：保存数据集
@@ -35,6 +35,6 @@ aic_configs = {
         'TEST_DIR': './dataset/c041_c042_[0.01, 0.02]/feat_label/test/',  # 测试集目录
         'TEST_SAMPLE_RATE': 1.0,  # 测试集采样率
         'ONLY_IMG_FEAT': False,  # 仅 img 特征
-        'TRAIN_FILE_BATCH_SIZE': 30,  # 训练集文件 batch_size，每次读 batch_size 个文件进内存
+        'TRAIN_FILE_BATCH_SIZE': 32,  # 训练集文件 batch_size，每次读 batch_size 个文件进内存
     }
 }
