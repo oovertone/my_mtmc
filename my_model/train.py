@@ -38,6 +38,7 @@ TEST_DIR = aic_configs['train_configs']['TEST_DIR']  # 测试集目录
 TEST_SAMPLE_RATE = aic_configs['train_configs']['TEST_SAMPLE_RATE']  # 测试集下采样率
 ONLY_IMG_FEAT = aic_configs['train_configs']['ONLY_IMG_FEAT']  # 仅 img 特征
 TRAIN_FILE_BATCH_SIZE = aic_configs['train_configs']['TRAIN_FILE_BATCH_SIZE']  # 训练集文件 batch_size，每次读 batch_size 个文件进内存
+SINGLE_CAM_MTSC = aic_configs['prepare_dataset_configs']['SINGLE_CAM_MTSC']  # 单相机场景 MTSC
 
 
 def read_dataset_file_path_dict(dataset_dir):
@@ -89,7 +90,7 @@ class My_Dataset(Dataset):
         self.data = np.array(self.data)
 
         if train_test == 'train':
-            # 新增异同相机，异同车辆分类
+            # 新增异同相机，异同车辆分类  # TODO 得考虑一下单相机 MTSC 场景下可能的bug
             car_1_flag = self.data[:, -1] == 1  # 两个样本是同一车辆
             car_0_flag = self.data[:, -1] == 0  # 两个样本是不同车辆
             same_diff = self.data[:, -2] == 1  # 两个样本是同一相机
@@ -104,21 +105,25 @@ class My_Dataset(Dataset):
             # data_diff = list(self.data[self.data[:, -2] == 0, :])
 
             # 平衡所有类别样本
-            len_data_min = np.min([len(data_same_1), len(data_same_0), len(data_diff_1), len(data_diff_0)])
+            if SINGLE_CAM_MTSC:  # 如果是单相机场景 MTSC
+                len_data_min = np.min([len(data_same_1), len(data_same_0)])
+            else:  # 如果是跨摄像机场景
+                len_data_min = np.min([len(data_same_1), len(data_same_0), len(data_diff_1), len(data_diff_0)])
 
             random.shuffle(data_same_1)
             data_same_1 = data_same_1[0:len_data_min]
 
             random.shuffle(data_same_0)
-            # data_same_0 = data_same_0[0:len_data_min]  # 减少负样本的训练数据
-            data_same_0 = data_same_0[0:int(np.floor(len_data_min / 2))]  # 减少负样本的训练数据
+            data_same_0 = data_same_0[0:len_data_min]  # 减少负样本的训练数据
+            # data_same_0 = data_same_0[0:int(np.floor(len_data_min / 2))]  # 减少负样本的训练数据
 
-            random.shuffle(data_diff_1)
-            data_diff_1 = data_diff_1[0:len_data_min]
+            if not SINGLE_CAM_MTSC:  # 如果是跨相机场景 MTMC
+                random.shuffle(data_diff_1)
+                data_diff_1 = data_diff_1[0:len_data_min]
 
-            random.shuffle(data_diff_0)
-            # data_diff_0 = data_diff_0[0:len_data_min]  # 减少负样本的训练数据
-            data_diff_0 = data_diff_0[0:int(np.floor(len_data_min / 2))]  # 减少负样本的训练数据
+                random.shuffle(data_diff_0)
+                data_diff_0 = data_diff_0[0:len_data_min]  # 减少负样本的训练数据
+                # data_diff_0 = data_diff_0[0:int(np.floor(len_data_min / 2))]  # 减少负样本的训练数据
 
             self.data = data_same_1 + data_same_0 + data_diff_1 + data_diff_0
             random.shuffle(self.data)

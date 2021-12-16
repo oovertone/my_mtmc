@@ -35,6 +35,7 @@ DOWN_SAMPLING_RATE = aic_configs['prepare_dataset_configs']['DOWN_SAMPLING_RATE'
 TRAIN_VALI_TEST_RATE = aic_configs['prepare_dataset_configs']['TRAIN_VALI_TEST_RATE']  # 训练集比例
 SAVE_DIR = aic_configs['prepare_dataset_configs']['SAVE_DIR']  # 保存路径
 BATCH_SIZE = aic_configs['prepare_dataset_configs']['BATCH_SIZE']  # 批次大小
+SINGLE_CAM_MTSC = aic_configs['prepare_dataset_configs']['SINGLE_CAM_MTSC']  # 单相机场景 MTSC
 
 
 class Save_Dataset(object):
@@ -570,26 +571,42 @@ def produce_dataset(ds_df, car_id_list_tvt_dict, save_dir, span_dict, q):
         # }
 
         # 初始化 TVT 对象（分类）
-        tvt_dataset_dict = {
-            'train': {
-                'same_1': TVT_Dataset('train', os.path.join(save_dir, 'train', 'same_1')),
-                'same_0': TVT_Dataset('train', os.path.join(save_dir, 'train', 'same_0')),
-                'diff_1': TVT_Dataset('train', os.path.join(save_dir, 'train', 'diff_1')),
-                'diff_0': TVT_Dataset('train', os.path.join(save_dir, 'train', 'diff_0')),
-            },
-            'vali': {
-                'same_1': TVT_Dataset('vali', os.path.join(save_dir, 'vali', 'same_1')),
-                'same_0': TVT_Dataset('vali', os.path.join(save_dir, 'vali', 'same_0')),
-                'diff_1': TVT_Dataset('vali', os.path.join(save_dir, 'vali', 'diff_1')),
-                'diff_0': TVT_Dataset('vali', os.path.join(save_dir, 'vali', 'diff_0')),
-            },
-            'test': {
-                'same_1': TVT_Dataset('test', os.path.join(save_dir, 'test', 'same_1')),
-                'same_0': TVT_Dataset('test', os.path.join(save_dir, 'test', 'same_0')),
-                'diff_1': TVT_Dataset('test', os.path.join(save_dir, 'test', 'diff_1')),
-                'diff_0': TVT_Dataset('test', os.path.join(save_dir, 'test', 'diff_0')),
-            },
-        }
+        if SINGLE_CAM_MTSC:  # 如果是单相机场景 MTSC
+            tvt_dataset_dict = {
+                'train': {
+                    'same_1': TVT_Dataset('train', os.path.join(save_dir, 'train', 'same_1')),
+                    'same_0': TVT_Dataset('train', os.path.join(save_dir, 'train', 'same_0')),
+                },
+                'vali': {
+                    'same_1': TVT_Dataset('vali', os.path.join(save_dir, 'vali', 'same_1')),
+                    'same_0': TVT_Dataset('vali', os.path.join(save_dir, 'vali', 'same_0')),
+                },
+                'test': {
+                    'same_1': TVT_Dataset('test', os.path.join(save_dir, 'test', 'same_1')),
+                    'same_0': TVT_Dataset('test', os.path.join(save_dir, 'test', 'same_0')),
+                },
+            }
+        else:  # 如果是跨相机场景 MTMC
+            tvt_dataset_dict = {
+                'train': {
+                    'same_1': TVT_Dataset('train', os.path.join(save_dir, 'train', 'same_1')),
+                    'same_0': TVT_Dataset('train', os.path.join(save_dir, 'train', 'same_0')),
+                    'diff_1': TVT_Dataset('train', os.path.join(save_dir, 'train', 'diff_1')),
+                    'diff_0': TVT_Dataset('train', os.path.join(save_dir, 'train', 'diff_0')),
+                },
+                'vali': {
+                    'same_1': TVT_Dataset('vali', os.path.join(save_dir, 'vali', 'same_1')),
+                    'same_0': TVT_Dataset('vali', os.path.join(save_dir, 'vali', 'same_0')),
+                    'diff_1': TVT_Dataset('vali', os.path.join(save_dir, 'vali', 'diff_1')),
+                    'diff_0': TVT_Dataset('vali', os.path.join(save_dir, 'vali', 'diff_0')),
+                },
+                'test': {
+                    'same_1': TVT_Dataset('test', os.path.join(save_dir, 'test', 'same_1')),
+                    'same_0': TVT_Dataset('test', os.path.join(save_dir, 'test', 'same_0')),
+                    'diff_1': TVT_Dataset('test', os.path.join(save_dir, 'test', 'diff_1')),
+                    'diff_0': TVT_Dataset('test', os.path.join(save_dir, 'test', 'diff_0')),
+                },
+            }
 
         return count_dict, tvt_dataset_dict
 
@@ -677,8 +694,9 @@ def produce_dataset(ds_df, car_id_list_tvt_dict, save_dir, span_dict, q):
 
         for j in range(len(ds_sel_df)):
             # 如果两个样本在同一相机，再做一轮下采样
-            if (ds_df.cam_id[i] == ds_sel_df.cam_id[j]) and (utils.false_2_true(0, abs(1 - DOWN_SAMPLING_RATE[0] / DOWN_SAMPLING_RATE[1]))):
-                continue
+            # if (ds_df.cam_id[i] == ds_sel_df.cam_id[j]) and (
+            #         utils.false_2_true(0, abs(1 - DOWN_SAMPLING_RATE[0] / DOWN_SAMPLING_RATE[1]))):
+            #     continue
 
             # 如果两个样本在不同相机 不同车辆，再做一轮下采样
             # if (ds_df.cam_id[i] != ds_sel_df.cam_id[j]) and \
@@ -714,7 +732,8 @@ def produce_dataset(ds_df, car_id_list_tvt_dict, save_dir, span_dict, q):
 
             # 按概率分到 train，vali，test
             if tvt == 'train':
-                tvt_dataset_dict['train'][get_sample_category(feat_label_list)].dataset_list.append(feat_label_list)  #这里先判断样本类别key，再进行存储
+                tvt_dataset_dict['train'][get_sample_category(feat_label_list)].dataset_list.append(
+                    feat_label_list)  # 这里先判断样本类别key，再进行存储
             elif tvt == 'vali':
                 tvt_dataset_dict['vali'][get_sample_category(feat_label_list)].dataset_list.append(feat_label_list)
             else:
