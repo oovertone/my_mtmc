@@ -33,7 +33,7 @@ aic_configs = {
         'RANDOM_SEED': 1,  # 随机种子
         'SAVE_MODEL': True,  # 保存模型
         'TRAIN_DIR': './dataset/c041_[0.05, 0.1]/feat_label/train/',  # 训练集目录
-        'TEST_DIR': './dataset/c045_[0.05, 0.1]/feat_label/test/',  # 测试集目录
+        'TEST_DIR': './dataset/c046_[0.05, 0.1]/feat_label/test/',  # 测试集目录
         'TEST_SAMPLE_RATE': 1.0,  # 测试集采样率
         'ONLY_IMG_FEAT': False,  # 仅 img 特征
         'TRAIN_FILE_BATCH_SIZE': 32,  # 训练集文件 batch_size，每次读 batch_size 个文件进内存
