@@ -45,9 +45,10 @@ def get_calibration_parms(calibration_path):
     """
     读取相机标定参数
     """
-
+    
     with open(calibration_path) as f:
         line_list = f.readlines()
+
         # hm: 单应性矩阵 homography matrix
         hm_str_list = line_list[0].split('\n')[0].split('Homography matrix: ')[1].split(';')
         hm = np.array(list(map(lambda x: np.array(x.split(' ')).astype(np.float64), hm_str_list)))

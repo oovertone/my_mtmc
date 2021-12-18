@@ -371,7 +371,7 @@ def main():
         train(model, device, train_loader, optimizer)
         test(model, device, test_loader)
         print('=' * 100)
-    # scheduler.step()
+    scheduler.step()
 
     # 保存模型
     if SAVE_MODEL:
